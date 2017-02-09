@@ -166,11 +166,22 @@ void print_list(struct File* files)
     }
 }
 
+void print_usage() {
+    char *usage = "\nUsage: rgpp [-l | -w word] {-n} {-b}\n"
+                  "Processes output from grep\n"
+                  "Must call grep with the following flags: -r -H -n -s -I -i\n"
+                  "\nOptions:\n"
+                  "  -l                     line mode\n"
+                  "  -w word                word mode, highlights matching words\n"
+                  "  -b                     show banner\n"
+                  "  -n                     show line number\n";
+    fprintf(stderr, "%s", usage);
+}
+
 int main(int argc, char** argv)
 {
-    char *usage = "This is usage.";
-    if (argc < 2) { // TODO: !!!!!!!!!!!!!!!!!!!!!!!!!!!
-        fprintf(stderr, "%s\n", usage);
+    if (argc < 2) {
+        print_usage();
         exit(1);
     }
 
@@ -195,7 +206,7 @@ int main(int argc, char** argv)
         arg_idx += 2;
     } else {
         fprintf(stderr, "First argument must be either -w or -l\n");
-        fprintf(stderr, "%s\n", usage);
+        print_usage();
         exit(1);
     }
 
@@ -208,21 +219,11 @@ int main(int argc, char** argv)
             show_banner_line = 1;
             show_line_number = 1;
         } else {
-            fprintf(stderr, "Unrecognized flag %s\n", argv[arg_idx]);
-            fprintf(stderr, "%s\n", usage);
+            fprintf(stderr, "Unrecognized flag \"%s\"\n", argv[arg_idx]);
+            print_usage();
             exit(1);
         }
         arg_idx++;
-    }
-
-    if (strcmp(argv[1], "-l")) {
-        line_mode = 1;
-    } else if (strcmp(argv[1], "-w")) {
-        word_mode = 1;
-    } else {
-        fprintf(stderr, "First argument must be \"-l\" or \"-w\"\n");
-        fprintf(stderr, "%s\n", usage);
-        exit(1);
     }
 
     // Read input from stdin into a linked list
@@ -236,19 +237,19 @@ int main(int argc, char** argv)
         nlines++;
         if (parse_line(line, file_name, &line_num)) {
             fprintf(stderr, "Could not parse input\n");
-            fprintf(stderr, "%s\n", usage);
+            print_usage();
             return 1;
         }
         insert_result(&files, file_name, line_num);
     }
 
     if (show_banner_line)
-        printf("THERE ARE %d LINES THAT MATCH\n", nlines);
+        printf("\nTHERE ARE %d LINES THAT MATCH\n\n", nlines);
 
     struct File* file;
     FILE* fp;
     int match;
-    //char* c;
+    int match_found;
     int i;
     for (file = files;  file != NULL; file = file->next) {
         fp = fopen(file->name, "r");
@@ -259,23 +260,30 @@ int main(int argc, char** argv)
         printf("=====================%s\n", file->name);
         line_num = 0;
         while (fgets(line, 2048, fp)) {
-            match = contains(file->lines, line_num);
             line_num++;
-            if (show_line_number) {
+            match_found = 0;
+            match = contains(file->lines, line_num);
+            if (line_mode) {
                 if (match)
                     printf("*");
                 else
                     printf(" ");
+            }
+            if (show_line_number) {
                 printf("%d: ", line_num);
             }
-            if (match) {
+            if (word_mode && match) {
                 i = 0;
                 while (line[i] != '\0') {
-                    if (strncmp(word, &line[i], word_len) == 0) {
-                        printf("\e[7m");
-                        printf("%s", word);
-                        printf("\e[0m");
-                        i += word_len;
+                    if (strncasecmp(word, &line[i], word_len) == 0) {
+                        match_found = 1;
+                        printf("\e[7m"); // switch to inverse video
+                        int j;
+                        for (j = 0; j < word_len; j++) {
+                            printf("%c", line[i]);
+                            i++;
+                        }
+                        printf("\e[0m"); // switch back to normal
                     } else {
                         printf("%c", line[i]);
                         i++;
@@ -283,6 +291,13 @@ int main(int argc, char** argv)
                 }
             } else {
                 printf("%s", line);
+            }
+            if (match && !match_found) {
+                fprintf(stderr, "\nCould not find word \"%s\" in line \"%d\"\n"
+                                "Possible mismatch between grepped word and "
+                                "rgpp word argument\n\n", word, line_num);
+                print_usage();
+                exit(1);
             }
         }
     }
