@@ -26,59 +26,6 @@ struct Line {
 };
 
 /**
- * Returns 0 on success and 1 on error
- */
-int parse_line(/*struct Result* result, */char* line, char* file_name, int* line_num)
-{
-    char *line_num_str = (char*)malloc(32);
-    if (line_num_str == NULL) {
-        fprintf(stderr, "Could not malloc\n");
-        perror("malloc");
-        return 1;
-    }
-
-    // read line name until first colon
-    char *c = file_name;
-    while (*line != ':') {
-        if (*line == '\0') {
-            fprintf(stderr, "No colons\n");
-            return 1;
-        }
-        *c = *line;
-        c++;
-        line++;
-    }
-    *c = '\0';
-
-    // skip colon
-    line++; 
-
-    // read line number until second colon
-    c = line_num_str;
-    while (*line != ':') {
-        if (*line == '\0') {
-            fprintf(stderr, "No colons\n");
-            return 1;
-        }
-        *c = *line;
-        c++;
-        line++;
-    }
-    *c = '\0';
-
-    // parse line number
-    char *endptr;
-    long ln = strtol(line_num_str, &endptr, 10);
-    if (errno != 0 || *endptr != '\0') {
-        perror("strtol");
-        return 1;
-    }
-    *line_num = (int)ln;
-
-    return 0;
-}
-
-/**
  * insert at the end of the list
  * Returns 0 on success and 1 on error
  */
@@ -118,7 +65,7 @@ int insert_result(struct File** head, char* file_name, int line_num)
     if (file == NULL) { // this is the first match in this file
         file = (struct File*)malloc(sizeof(struct File));
         if (file == NULL) {
-            fprintf(stderr, "Could not malloc");
+            fprintf(stderr, "Could not malloc\n");
             perror("malloc");
             return 1;
         }
@@ -152,6 +99,9 @@ int contains(struct Line* lines, int line_num)
     return 0;
 }
 
+/**
+ * Debugger method for printing the data structure
+ */
 void print_list(struct File* files)
 {
     struct Line* line;
@@ -166,6 +116,9 @@ void print_list(struct File* files)
     }
 }
 
+/**
+ *
+ */
 void print_usage() {
     char *usage = "\nUsage: rgpp [-l | -w word] {-n} {-b}\n"
                   "Processes output from grep\n"
@@ -229,18 +182,23 @@ int main(int argc, char** argv)
     // Read input from stdin into a linked list
     int nlines = 0;
     char line[2048];
-    char file_name[256];
-    int line_num;
+    char* file_name;
     struct File* files = NULL;
+    char* line_num_str;
+    char *endptr;
+    long ln;
 
     while (fgets(line, 1024, stdin) != NULL) {
         nlines++;
-        if (parse_line(line, file_name, &line_num)) {
-            fprintf(stderr, "Could not parse input\n");
+        file_name = strtok(line, ":");
+        line_num_str = strtok(NULL, ":");
+        ln = strtol(line_num_str, &endptr, 10);
+        if (errno != 0 || *endptr != '\0') {
+            perror("strtol");
             print_usage();
             return 1;
         }
-        insert_result(&files, file_name, line_num);
+        insert_result(&files, file_name, (int)ln);
     }
 
     if (show_banner_line)
@@ -251,39 +209,51 @@ int main(int argc, char** argv)
     int match;
     int match_found;
     int i;
+    int line_num;
     for (file = files;  file != NULL; file = file->next) {
         fp = fopen(file->name, "r");
         if (fp == NULL) {
             perror("fopen");
             return 1;
         }
+
         printf("=====================%s\n", file->name);
+
         line_num = 0;
+
         while (fgets(line, 2048, fp)) {
             line_num++;
             match_found = 0;
             match = contains(file->lines, line_num);
+
             if (line_mode) {
                 if (match)
                     printf("*");
                 else
                     printf(" ");
             }
-            if (show_line_number) {
+
+            if (show_line_number)
                 printf("%d: ", line_num);
-            }
-            if (word_mode && match) {
+
+            if (match) {
                 i = 0;
+                // search for matching substring
                 while (line[i] != '\0') {
                     if (strncasecmp(word, &line[i], word_len) == 0) {
                         match_found = 1;
-                        printf("\e[7m"); // switch to inverse video
-                        int j;
-                        for (j = 0; j < word_len; j++) {
+                        if (word_mode) {
+                            printf("\e[7m"); // switch to inverse video
+                            int j;
+                            for (j = 0; j < word_len; j++) {
+                                printf("%c", line[i]);
+                                i++;
+                            }
+                            printf("\e[0m"); // switch back to normal
+                        } else {
                             printf("%c", line[i]);
                             i++;
                         }
-                        printf("\e[0m"); // switch back to normal
                     } else {
                         printf("%c", line[i]);
                         i++;
@@ -292,6 +262,7 @@ int main(int argc, char** argv)
             } else {
                 printf("%s", line);
             }
+
             if (match && !match_found) {
                 fprintf(stderr, "\nCould not find word \"%s\" in line \"%d\"\n"
                                 "Possible mismatch between grepped word and "
@@ -300,6 +271,8 @@ int main(int argc, char** argv)
                 exit(1);
             }
         }
+
+        fclose(fp); // close file
     }
 
     return 0;
