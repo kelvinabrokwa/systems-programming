@@ -3,13 +3,15 @@
  * rgpp.c
  */
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
 #include <malloc.h>
 #include <errno.h>
+#include <string.h>
 
 /**
- *
+ * This data structure represents a file that has one 
+ * or more matching lines
+ * It also contains a next field for usage in a linked list
  */
 struct File {
     char* name;
@@ -18,7 +20,7 @@ struct File {
 };
 
 /**
- *
+ * This is essentially a node for a linked list of ints
  */
 struct Line {
     int num;
@@ -59,9 +61,11 @@ int insert_line_num(struct File* file, int line_num)
 int insert_result(struct File** head, char* file_name, int line_num)
 {
     struct File* file = *head;
+
     while (file != NULL && strcmp(file->name, file_name) != 0) {
         file = file->next;
     }
+
     if (file == NULL) { // this is the first match in this file
         file = (struct File*)malloc(sizeof(struct File));
         if (file == NULL) {
@@ -80,7 +84,9 @@ int insert_result(struct File** head, char* file_name, int line_num)
         file->next = *head;
         *head = file;
     }
+
     insert_line_num(file, line_num);
+
     return 0;
 }
 
@@ -117,7 +123,7 @@ void print_list(struct File* files)
 }
 
 /**
- *
+ * Prints usage information
  */
 void print_usage() {
     char *usage = "\nUsage: rgpp [-l | -w word] {-n} {-b}\n"
@@ -154,11 +160,16 @@ int main(int argc, char** argv)
         arg_idx++;
     } else if (strcmp(argv[1], "-w") == 0) {
         word_mode = 1;
+        if (argc < 3) {
+            fprintf(stderr, "\nError: The -w flag must have a word argument\n"); 
+            print_usage();
+            exit(1);
+        }
         word = argv[2];
         word_len = strlen(word);
         arg_idx += 2;
     } else {
-        fprintf(stderr, "First argument must be either -w or -l\n");
+        fprintf(stderr, "\nError: First argument must be either -w or -l\n");
         print_usage();
         exit(1);
     }
@@ -172,7 +183,7 @@ int main(int argc, char** argv)
             show_banner_line = 1;
             show_line_number = 1;
         } else {
-            fprintf(stderr, "Unrecognized flag \"%s\"\n", argv[arg_idx]);
+            fprintf(stderr, "\nError: Unrecognized flag \"%s\"\n", argv[arg_idx]);
             print_usage();
             exit(1);
         }
@@ -180,16 +191,31 @@ int main(int argc, char** argv)
     }
 
     // Read input from stdin into a linked list
-    int nlines = 0;
+    int matches = 0;
+    int i;
     char line[2048];
     char* file_name;
-    struct File* files = NULL;
     char* line_num_str;
-    char *endptr;
+    char* endptr;
+    struct File* files = NULL;
     long ln;
 
     while (fgets(line, 1024, stdin) != NULL) {
-        nlines++;
+        if (line_mode) {
+            // count matching lines
+            matches++;
+        } else {
+            // count matching words
+            i = 0;
+            while (line[i] != '\0') {
+                if (strncasecmp(word, &line[i], word_len) == 0) {
+                    i += word_len;
+                    matches++;
+                } else {
+                    i++;
+                }
+            }
+        }
         file_name = strtok(line, ":");
         line_num_str = strtok(NULL, ":");
         ln = strtol(line_num_str, &endptr, 10);
@@ -201,15 +227,20 @@ int main(int argc, char** argv)
         insert_result(&files, file_name, (int)ln);
     }
 
-    if (show_banner_line)
-        printf("\nTHERE ARE %d LINES THAT MATCH\n\n", nlines);
+    if (show_banner_line) {
+        if (line_mode)
+            printf("\nTHERE ARE %d LINES THAT MATCH\n\n", matches);
+        else
+            printf("\nTHERE ARE %d MATCHING WORDS\n\n", matches);
+    }
 
-    struct File* file;
+    // Create rgpp output
     FILE* fp;
     int match;
-    int match_found;
-    int i;
     int line_num;
+    int match_found;
+    struct File* file;
+
     for (file = files;  file != NULL; file = file->next) {
         fp = fopen(file->name, "r");
         if (fp == NULL) {
@@ -264,9 +295,9 @@ int main(int argc, char** argv)
             }
 
             if (match && !match_found) {
-                fprintf(stderr, "\nCould not find word \"%s\" in line \"%d\"\n"
+                fprintf(stderr, "\nError: Could not find word \"%s\" in line %d\n"
                                 "Possible mismatch between grepped word and "
-                                "rgpp word argument\n\n", word, line_num);
+                                "rgpp word argument\n", word, line_num);
                 print_usage();
                 exit(1);
             }
