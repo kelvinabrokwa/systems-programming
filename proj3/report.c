@@ -33,7 +33,7 @@ void print_usage() {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
+    if (argc < 2) {
         fprintf(stderr, "Not enough args\n");
         print_usage();
         exit(EXIT_FAILURE);
@@ -43,6 +43,8 @@ int main(int argc, char** argv) {
     signal(SIGUSR1, signal_handler);
 
     char* endptr;
+
+    // parse num argument
     long num = strtol(argv[1], &endptr, 10);
     if (errno != 0 || *endptr != '\0' || num <= 0) {
         fprintf(stderr, "Invalid num argument %s\n", argv[1]);
@@ -50,6 +52,70 @@ int main(int argc, char** argv) {
         print_usage();
         exit(EXIT_FAILURE);
     }
+
+    // parse delay and kilobyte arguments
+    int in_kb = 0;
+    long delay = 0;
+    int i;
+    for (i = 2; i < argc; i++) {
+        if (strncmp(argv[i], "-k", 2) == 0) {
+            in_kb = 1;
+        } else if (strncmp(argv[i], "-d", 2) == 0) {
+            if (argc <= i + 1) {
+                fprintf(stderr, "-d flag must be followed by a non-zero integer\n");
+                print_usage();
+                exit(EXIT_FAILURE);
+            }
+            delay = strtol(argv[i + 1], &endptr, 10);
+            if (errno != 0 || *endptr != '\0' || delay <= 0) {
+                fprintf(stderr, "-d argument must be a non-zero integer. "
+                                "You entered %s\n", argv[i + 1]);
+                perror("strtol");
+                print_usage();
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
+    // build env array for totalsize
+    int num_env_vars = 1; // always required TMOM variable
+    int env_idx = 0;
+
+    if (in_kb)
+        num_env_vars++;
+
+    if (delay)
+        num_env_vars++;
+
+    char* env[num_env_vars];
+
+    char tmom[128];
+    sprintf(tmom, "TMOM=%d", (int)getpid());
+    env[env_idx] = tmom;
+    env_idx++;
+
+    if (in_kb) {
+        env[env_idx] = "UNITS=k";
+        env_idx++;
+    }
+
+    if (delay) {
+        char tstall[128];
+        sprintf(tstall, "TSTALL=%ld", delay);
+        env[env_idx] = tstall;
+        env_idx++;
+    }
+
+    env[env_idx] = NULL; // null terminate the array
+
+    fprintf(stderr, "%s\n", env[0]);
+    fprintf(stderr, "%s\n", env[1]);
+    fprintf(stderr, "%s\n", env[2]);
+    fprintf(stderr, "%s\n", env[3]);
+
+    /**
+     * Create pipes
+     */
 
     // stdin to accessed1 stdin
     int stdin_to_accessed1_stdin[2];
@@ -172,9 +238,6 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Failed to exec accessed2\n");
         exit(EXIT_FAILURE);
     }
-
-    char tmom_env[128];
-    sprintf(tmom_env, "TMOM=%d", (int)getpid());
     
     /**
      * totalsize1
@@ -205,7 +268,6 @@ int main(int argc, char** argv) {
         CLOSE_ALL_PIPES();
 
         char* args[] = {NULL};
-        char* env[] = {tmom_env, NULL};
         execve("totalsize", args, env);
 
         perror("execve");
@@ -242,7 +304,6 @@ int main(int argc, char** argv) {
         CLOSE_ALL_PIPES();
 
         char* args[] = {NULL};
-        char* env[] = {tmom_env, NULL};
         execve("totalsize", args, env);
 
         perror("execve");
@@ -284,27 +345,13 @@ int main(int argc, char** argv) {
 
 void signal_handler() {
     // read from pipes
-    char val_str[64];
-    long val;
-    char* endptr;
+    char val[64];
 
     // read from totalsize1
-    read(totalsize1_stdout_to_report_read, &val_str, sizeof(val_str));
-    val = strtol(val_str, &endptr, 10);
-    if (errno != 0 || *endptr != '\n') {
-        fprintf(stderr, "Could not convert output from totalsize\n");
-        perror("strtol");
-        exit(EXIT_FAILURE);
-    }
-    printf("%ld\n", val);
+    read(totalsize1_stdout_to_report_read, &val, sizeof(val));
+    printf("%s\n", val);
 
     // read from totalsize2
-    read(totalsize2_stdout_to_report_read, &val_str, 64);
-    val = strtol(val_str, &endptr, 10);
-    if (errno != 0 || *endptr != '\n') {
-        fprintf(stderr, "Could not convert output from totalsize\n");
-        perror("strtol");
-        exit(EXIT_FAILURE);
-    }
-    printf("%ld\n", val);
+    read(totalsize2_stdout_to_report_read, &val, sizeof(val));
+    printf("%s\n", val);
 }
