@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <signal.h>
 
 #define CLOSE_ALL_PIPES() close(stdin_to_accessed1_stdin[0]); \
     close(stdin_to_accessed1_stdin[1]); \
@@ -22,6 +23,11 @@
     close(totalsize2_stdout_to_report[0]); \
     close(totalsize2_stdout_to_report[1]) \
 
+int totalsize1_stdout_to_report_read;
+int totalsize2_stdout_to_report_read;
+
+void signal_handler();
+
 void print_usage() {
     fprintf(stderr, "This is report usage\n");
 }
@@ -32,6 +38,9 @@ int main(int argc, char** argv) {
         print_usage();
         exit(EXIT_FAILURE);
     }
+
+    // handle signals from totalsize
+    signal(SIGUSR1, signal_handler);
 
     char* endptr;
     long num = strtol(argv[1], &endptr, 10);
@@ -83,6 +92,10 @@ int main(int argc, char** argv) {
         perror("pipe");
         exit(EXIT_FAILURE);
     }
+
+    // get these file descriptors global for the sake of the interrupt handler
+    totalsize1_stdout_to_report_read = totalsize1_stdout_to_report[0];
+    totalsize2_stdout_to_report_read = totalsize2_stdout_to_report[0];
 
     /**
      * accessed1
@@ -160,6 +173,9 @@ int main(int argc, char** argv) {
         exit(EXIT_FAILURE);
     }
 
+    char tmom_env[128];
+    sprintf(tmom_env, "TMOM=%d", (int)getpid());
+    
     /**
      * totalsize1
      */
@@ -168,7 +184,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "failed fork\n");
         exit(EXIT_FAILURE);
     }
-
+    
     if (totalsize1 == 0) {
         // connect accessed1 stdout to totalsize1 stdin
         close(0);
@@ -189,7 +205,7 @@ int main(int argc, char** argv) {
         CLOSE_ALL_PIPES();
 
         char* args[] = {NULL};
-        char* env[] = {NULL};
+        char* env[] = {tmom_env, NULL};
         execve("totalsize", args, env);
 
         perror("execve");
@@ -226,7 +242,7 @@ int main(int argc, char** argv) {
         CLOSE_ALL_PIPES();
 
         char* args[] = {NULL};
-        char* env[] = {NULL};
+        char* env[] = {tmom_env, NULL};
         execve("totalsize", args, env);
 
         perror("execve");
@@ -257,28 +273,38 @@ int main(int argc, char** argv) {
     close(stdin_to_accessed1_stdin[1]);
     close(stdin_to_accessed2_stdin[1]);
 
-    // read from pipes
-    char val_str[64];
-    long val;
-
-    read(totalsize1_stdout_to_report[0], &val_str, sizeof(val_str));
-    val = strtol(val_str, &endptr, 10);
-    if (errno != 0 || *endptr != '\n') {
-        fprintf(stderr, "Could not convert output from totalsize\n");
-        perror("strtol");
-        exit(EXIT_FAILURE);
+    while (1) {
+        sleep(1);
+        printf("*");
+        fflush(stdout);
     }
-    printf("%ld\n", val);
-
-    read(totalsize2_stdout_to_report[0], &val_str, 64);
-    val = strtol(val_str, &endptr, 10);
-    if (errno != 0 || *endptr != '\n') {
-        fprintf(stderr, "Could not convert output from totalsize\n");
-        perror("strtol");
-        exit(EXIT_FAILURE);
-    }
-    printf("%ld\n", val);
 
     return 0;
 }
 
+void signal_handler() {
+    // read from pipes
+    char val_str[64];
+    long val;
+    char* endptr;
+
+    // read from totalsize1
+    read(totalsize1_stdout_to_report_read, &val_str, sizeof(val_str));
+    val = strtol(val_str, &endptr, 10);
+    if (errno != 0 || *endptr != '\n') {
+        fprintf(stderr, "Could not convert output from totalsize\n");
+        perror("strtol");
+        exit(EXIT_FAILURE);
+    }
+    printf("%ld\n", val);
+
+    // read from totalsize2
+    read(totalsize2_stdout_to_report_read, &val_str, 64);
+    val = strtol(val_str, &endptr, 10);
+    if (errno != 0 || *endptr != '\n') {
+        fprintf(stderr, "Could not convert output from totalsize\n");
+        perror("strtol");
+        exit(EXIT_FAILURE);
+    }
+    printf("%ld\n", val);
+}

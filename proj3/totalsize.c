@@ -16,10 +16,11 @@ void print_usage() {
 }
 
 int main() {
+    char* endptr;
+
     // parse TSTALL env var
     char* tstall_str = getenv("TSTALL");
     long tstall = 0;
-    char* endptr;
     if (tstall_str != NULL) {
         tstall = strtol(tstall_str, &endptr, 10);
         if (errno != 0 || *endptr != '\0')
@@ -30,12 +31,12 @@ int main() {
     char* units = getenv("UNITS");
     int in_kb = 0;
     if (units != NULL) {
-        if (*units == 'k' || *units == 'K')
+        if (*units == 'k' || *units == 'K') // FIXME: error on kbogus
             in_kb = 1;
     }
 
     // parse TMOM env var
-    int tmom_str = getenv("TMOM");
+    char* tmom_str = getenv("TMOM");
     long tmom = 0;
     if (tmom_str != NULL) {
         tmom = strtol(tmom_str, &endptr, 10);
