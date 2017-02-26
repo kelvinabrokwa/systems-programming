@@ -7,8 +7,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
 
-#define CLOSE_ALL_PIPES()  close(stdin_to_accessed1_stdin[0]); \
+#define CLOSE_ALL_PIPES() close(stdin_to_accessed1_stdin[0]); \
     close(stdin_to_accessed1_stdin[1]); \
     close(stdin_to_accessed2_stdin[0]); \
     close(stdin_to_accessed2_stdin[1]); \
@@ -28,6 +29,15 @@ void print_usage() {
 int main(int argc, char** argv) {
     if (argc != 2) {
         fprintf(stderr, "Not enough args\n");
+        print_usage();
+        exit(-1);
+    }
+
+    char* endptr;
+    long num = strtol(argv[1], &endptr, 10);
+    if (errno != 0 || *endptr != '\0' || num <= 0) {
+        fprintf(stderr, "Invalid num argument %s\n", argv[1]);
+        perror("strtol");
         print_usage();
         exit(-1);
     }
@@ -103,7 +113,9 @@ int main(int argc, char** argv) {
 
         CLOSE_ALL_PIPES();
 
-        char* args[] = {"accessed", "-3", NULL};
+        char num_arg[32];
+        sprintf(num_arg, "%ld", num);
+        char* args[] = {"accessed", num_arg, NULL};
         execv("accessed", args);
 
         perror("execv");
@@ -139,7 +151,9 @@ int main(int argc, char** argv) {
         
         CLOSE_ALL_PIPES();
 
-        char* args[] = {"accessed", "-3", NULL};
+        char num_arg[32];
+        sprintf(num_arg, "-%ld", num);
+        char* args[] = {"accessed", num_arg, NULL};
         execv("accessed", args);
 
         perror("execv");
@@ -221,10 +235,15 @@ int main(int argc, char** argv) {
         exit(-1);
     }
 
+    // report doesn't use these at all
     close(accessed1_stdout_to_totalsize1_stdin[0]);
     close(accessed1_stdout_to_totalsize1_stdin[1]);
     close(accessed2_stdout_to_totalsize2_stdin[0]);
     close(accessed2_stdout_to_totalsize2_stdin[1]);
+    close(stdin_to_accessed1_stdin[0]);
+    close(stdin_to_accessed2_stdin[0]);
+    close(totalsize1_stdout_to_report[1]);
+    close(totalsize2_stdout_to_report[1]);
 
     // write files from stdin to accessed1 and accessed2
     char filename[4096];
