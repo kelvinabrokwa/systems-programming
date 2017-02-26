@@ -54,19 +54,11 @@ int main(int argc, char** argv) {
         if (stat(filename, &sb) == -1)
             continue;
         if (num > 0) { // files which have not been accessed in days
-            if ((curr_time - sb.st_atime) > days_in_secs) {
-                //printf("%s\n", filename);
-                write(1, filename, strlen(filename));
-                write(1, " ", 1);
-            }
+            if ((curr_time - sb.st_atime) > days_in_secs) 
+                printf("%s\n", filename);
         } else { // files which have been accessed in days
             if ((curr_time - sb.st_atime) <= days_in_secs)
-            {
-                //fprintf(stderr, "->%s\n", filename);
-                //printf("%s\n", filename);
-                write(1, filename, strlen(filename));
-                write(1, " ", 1);
-            }
+                printf("%s\n", filename);
         }
     }
 

@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
     if (argc != 2) {
         fprintf(stderr, "Not enough args\n");
         print_usage();
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     char* endptr;
@@ -39,51 +39,50 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Invalid num argument %s\n", argv[1]);
         perror("strtol");
         print_usage();
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     // stdin to accessed1 stdin
     int stdin_to_accessed1_stdin[2];
     if (pipe(stdin_to_accessed1_stdin) == -1) {
         perror("pipe");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     // accessed1 stdout to totalsize stdin
     int accessed1_stdout_to_totalsize1_stdin[2];
     if (pipe(accessed1_stdout_to_totalsize1_stdin) == -1) {
         perror("pipe");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     // totalsize1 stdout to report
     int totalsize1_stdout_to_report[2];
     if (pipe(totalsize1_stdout_to_report) == -1) {
         perror("pipe");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     // stdin to accessed2 stdin
     int stdin_to_accessed2_stdin[2];
     if (pipe(stdin_to_accessed2_stdin) == -1) {
         perror("pipe");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     // accessed2 stdout to totalsize2 stdin
     int accessed2_stdout_to_totalsize2_stdin[2];
     if (pipe(accessed2_stdout_to_totalsize2_stdin) == -1) {
         perror("pipe");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     // totalsize2 stdout to report
     int totalsize2_stdout_to_report[2];
     if (pipe(totalsize2_stdout_to_report) == -1) {
         perror("pipe");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
-
 
     /**
      * accessed1
@@ -91,7 +90,7 @@ int main(int argc, char** argv) {
     int accessed1 = fork();
     if (accessed1 == -1) {
         fprintf(stderr, "failed fork\n");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     if (accessed1 == 0) {
@@ -100,7 +99,7 @@ int main(int argc, char** argv) {
         if (dup2(stdin_to_accessed1_stdin[0], 0) == -1) {
             fprintf(stderr, "Could not dup\n");
             perror("dup2");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
 
         // connect accessed1 stdout to totalsize1 stdin
@@ -108,7 +107,7 @@ int main(int argc, char** argv) {
         if (dup2(accessed1_stdout_to_totalsize1_stdin[1], 1) == -1) {
             fprintf(stderr, "Could not dup\n");
             perror("dup2");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
 
         CLOSE_ALL_PIPES();
@@ -120,7 +119,7 @@ int main(int argc, char** argv) {
 
         perror("execv");
         fprintf(stderr, "Failed to exec accessed1\n");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     /**
@@ -129,7 +128,7 @@ int main(int argc, char** argv) {
     int accessed2 = fork();
     if (accessed2 == -1) {
         fprintf(stderr, "failed fork\n");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     if (accessed2 == 0) {
@@ -138,7 +137,7 @@ int main(int argc, char** argv) {
         if (dup2(stdin_to_accessed2_stdin[0], 0) == -1) {
             fprintf(stderr, "Could not dup\n");
             perror("dup2");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
 
         // connect accessed1 stdout to totalsize1 stdin
@@ -146,7 +145,7 @@ int main(int argc, char** argv) {
         if (dup2(accessed2_stdout_to_totalsize2_stdin[1], 1) == -1) {
             fprintf(stderr, "Could not dup\n");
             perror("dup2");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
         
         CLOSE_ALL_PIPES();
@@ -158,7 +157,7 @@ int main(int argc, char** argv) {
 
         perror("execv");
         fprintf(stderr, "Failed to exec accessed2\n");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     /**
@@ -167,7 +166,7 @@ int main(int argc, char** argv) {
     int totalsize1 = fork();
     if (totalsize1 == -1) {
         fprintf(stderr, "failed fork\n");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     if (totalsize1 == 0) {
@@ -176,7 +175,7 @@ int main(int argc, char** argv) {
         if (dup2(accessed1_stdout_to_totalsize1_stdin[0], 0) == -1) {
             fprintf(stderr, "Could not dup\n");
             perror("dup2");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
 
         // connect totalsize1 stdout to the pipe input
@@ -184,7 +183,7 @@ int main(int argc, char** argv) {
         if (dup2(totalsize1_stdout_to_report[1], 1) == -1) {
             fprintf(stderr, "Could not dup\n");
             perror("dup2");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
 
         CLOSE_ALL_PIPES();
@@ -195,7 +194,7 @@ int main(int argc, char** argv) {
 
         perror("execve");
         fprintf(stderr, "Failed to execve totalsize1\n");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     /**
@@ -204,7 +203,7 @@ int main(int argc, char** argv) {
     int totalsize2 = fork();
     if (totalsize2 == -1) {
         fprintf(stderr, "failed fork\n");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     if (totalsize2 == 0) {
@@ -213,7 +212,7 @@ int main(int argc, char** argv) {
         if (dup2(accessed2_stdout_to_totalsize2_stdin[0], 0) == -1) {
             fprintf(stderr, "Could not dup\n");
             perror("dup2");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
 
         // connect totalsize1 stdout to the pipe input
@@ -221,7 +220,7 @@ int main(int argc, char** argv) {
         if (dup2(totalsize2_stdout_to_report[1], 1) == -1) {
             fprintf(stderr, "Could not dup\n");
             perror("dup2");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
 
         CLOSE_ALL_PIPES();
@@ -232,7 +231,7 @@ int main(int argc, char** argv) {
 
         perror("execve");
         fprintf(stderr, "Failed to execve totalsize2\n");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     // report doesn't use these at all
@@ -259,10 +258,25 @@ int main(int argc, char** argv) {
     close(stdin_to_accessed2_stdin[1]);
 
     // read from pipes
+    char val_str[64];
     long val;
-    read(totalsize1_stdout_to_report[0], &val, sizeof(int));
+
+    read(totalsize1_stdout_to_report[0], &val_str, sizeof(val_str));
+    val = strtol(val_str, &endptr, 10);
+    if (errno != 0 || *endptr != '\n') {
+        fprintf(stderr, "Could not convert output from totalsize\n");
+        perror("strtol");
+        exit(EXIT_FAILURE);
+    }
     printf("%ld\n", val);
-    read(totalsize2_stdout_to_report[0], &val, sizeof(int));
+
+    read(totalsize2_stdout_to_report[0], &val_str, 64);
+    val = strtol(val_str, &endptr, 10);
+    if (errno != 0 || *endptr != '\n') {
+        fprintf(stderr, "Could not convert output from totalsize\n");
+        perror("strtol");
+        exit(EXIT_FAILURE);
+    }
     printf("%ld\n", val);
 
     return 0;
