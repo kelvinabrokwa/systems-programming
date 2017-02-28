@@ -344,16 +344,46 @@ int main(int argc, char** argv) {
 
     // read from pipes
     char val[64];
+    char c;
+
+    // These two very ugly reads do it byte by byte so that we stop
+    // at the newline character
 
     // read from totalsize1
-    read(totalsize1_stdout_to_report[0], &val, sizeof(val));
+    int idx = 0;
+    if (read(totalsize1_stdout_to_report[0], &c, 1) == -1) {
+        fprintf(stderr, "ERROR: Failed to read from totalsize1 output pipe\n");
+        perror("read");
+    }
+    while (c != '\n') {
+        val[idx] = c;
+        idx++;
+        if (read(totalsize1_stdout_to_report[0], &c, 1) == -1) {
+            fprintf(stderr, "ERROR: Failed to read from totalsize1 output pipe\n");
+            perror("read");
+        }
+    }
+    val[idx] = '\0'; // terminate string
+
     printf("A total of %s%s are in regular files not accessed for 1 days.\n",
             val, in_kb ? "" : " bytes");
 
     printf("----------\n");
 
     // read from totalsize2
-    read(totalsize2_stdout_to_report[0], &val, sizeof(val));
+    idx = 0;
+    if (read(totalsize2_stdout_to_report[0], &c, 1) == -1) {
+        fprintf(stderr, "ERROR: Failed to read from totalsize1 output pipe\n");
+        perror("read");
+    }
+    while (c != '\n') {
+        val[idx] = c;
+        idx++;
+        if (read(totalsize2_stdout_to_report[0], &c, 1) == -1) {
+            fprintf(stderr, "ERROR: Failed to read from totalsize1 output pipe\n");
+            perror("read");
+        }
+    }
     printf("A total of %s%s are in regular files accessed within 1 days.\n",
             val, in_kb ? "" : " bytes");
 

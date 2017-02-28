@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 set -x
 
-make report
-make totalsize
-make accessed
+make
 
 separator() {
     set +x
@@ -52,4 +50,5 @@ find ./pgm3test.d -print | ./report 5
 separator
 
 ./report 5
+separator
 
