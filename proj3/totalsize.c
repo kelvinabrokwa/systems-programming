@@ -31,7 +31,7 @@ int main() {
     char* units = getenv("UNITS");
     int in_kb = 0;
     if (units != NULL) {
-        if (*units == 'k' || *units == 'K') // FIXME: error on kbogus
+        if (strcmp(units, "k") == 0 || strcmp(units, "K") == 0)
             in_kb = 1;
     }
 
@@ -43,12 +43,12 @@ int main() {
         if (errno != 0 || *endptr != '\0' || tmom <= 0)
             tmom = 0;
     }
-    
+
     char filename[4096];
     long totalsize  = 0;
     struct stat sb;
     while (scanf("%s", filename) != EOF) {
-        if (tstall) 
+        if (tstall)
             sleep(tstall);
         if (stat(filename, &sb) == -1)
             continue;

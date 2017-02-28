@@ -1,4 +1,4 @@
-CFLAGS = -Wall
+CFLAGS = -Wall -g
 
 all:
 	make totalsize && make accessed && make report
@@ -11,6 +11,12 @@ accessed:
 
 report:
 	gcc $(CFLAGS) report.c -o report
+
+test:
+	./test.sh
+
+top:
+	top -U kelvin
 
 .PHONY: accessed totalsize report
 

@@ -2,13 +2,14 @@
  * report.c
  * Author: Kelvin Abrokwa-Johnson
  */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #define CLOSE_ALL_PIPES() close(stdin_to_accessed1_stdin[0]); \
     close(stdin_to_accessed1_stdin[1]); \
@@ -23,13 +24,18 @@
     close(totalsize2_stdout_to_report[0]); \
     close(totalsize2_stdout_to_report[1]) \
 
-int totalsize1_stdout_to_report_read;
-int totalsize2_stdout_to_report_read;
+int signal_flag;
 
-void signal_handler();
+void signal_handler() {
+    signal_flag = 1;
+}
 
 void print_usage() {
-    fprintf(stderr, "This is report usage\n");
+    fprintf(stderr, "\nUsage: ls | ./report <number of days> {-d <delay>} {-k}\n"
+                    "Creates a report of how recently files were modified\n"
+                    "\nOptions\n"
+                    "  -d num     number of seconds to delay between inputs\n"
+                    "  -k         print file size in kilobytes\n");
 }
 
 int main(int argc, char** argv) {
@@ -40,6 +46,7 @@ int main(int argc, char** argv) {
     }
 
     // handle signals from totalsize
+    signal_flag = 0;
     signal(SIGUSR1, signal_handler);
 
     char* endptr;
@@ -58,7 +65,7 @@ int main(int argc, char** argv) {
     long delay = 0;
     int i;
     for (i = 2; i < argc; i++) {
-        if (strncmp(argv[i], "-k", 2) == 0) {
+        if (strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "-K") == 0) {
             in_kb = 1;
         } else if (strncmp(argv[i], "-d", 2) == 0) {
             if (argc <= i + 1) {
@@ -78,8 +85,7 @@ int main(int argc, char** argv) {
     }
 
     // build env array for totalsize
-    int num_env_vars = 1; // always required TMOM variable
-    int env_idx = 0;
+    int num_env_vars = 2; // always required TMOM variable and NULL terminator
 
     if (in_kb)
         num_env_vars++;
@@ -88,6 +94,8 @@ int main(int argc, char** argv) {
         num_env_vars++;
 
     char* env[num_env_vars];
+
+    int env_idx = 0;
 
     char tmom[128];
     sprintf(tmom, "TMOM=%d", (int)getpid());
@@ -107,11 +115,6 @@ int main(int argc, char** argv) {
     }
 
     env[env_idx] = NULL; // null terminate the array
-
-    fprintf(stderr, "%s\n", env[0]);
-    fprintf(stderr, "%s\n", env[1]);
-    fprintf(stderr, "%s\n", env[2]);
-    fprintf(stderr, "%s\n", env[3]);
 
     /**
      * Create pipes
@@ -158,10 +161,6 @@ int main(int argc, char** argv) {
         perror("pipe");
         exit(EXIT_FAILURE);
     }
-
-    // get these file descriptors global for the sake of the interrupt handler
-    totalsize1_stdout_to_report_read = totalsize1_stdout_to_report[0];
-    totalsize2_stdout_to_report_read = totalsize2_stdout_to_report[0];
 
     /**
      * accessed1
@@ -226,7 +225,7 @@ int main(int argc, char** argv) {
             perror("dup2");
             exit(EXIT_FAILURE);
         }
-        
+
         CLOSE_ALL_PIPES();
 
         char num_arg[32];
@@ -238,7 +237,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Failed to exec accessed2\n");
         exit(EXIT_FAILURE);
     }
-    
+
     /**
      * totalsize1
      */
@@ -247,7 +246,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "failed fork\n");
         exit(EXIT_FAILURE);
     }
-    
+
     if (totalsize1 == 0) {
         // connect accessed1 stdout to totalsize1 stdin
         close(0);
@@ -334,24 +333,41 @@ int main(int argc, char** argv) {
     close(stdin_to_accessed1_stdin[1]);
     close(stdin_to_accessed2_stdin[1]);
 
-    while (1) {
+
+    while (!signal_flag) {
         sleep(1);
         printf("*");
         fflush(stdout);
     }
 
-    return 0;
-}
+    printf("\n");
 
-void signal_handler() {
     // read from pipes
     char val[64];
 
     // read from totalsize1
-    read(totalsize1_stdout_to_report_read, &val, sizeof(val));
-    printf("%s\n", val);
+    read(totalsize1_stdout_to_report[0], &val, sizeof(val));
+    printf("A total of %s%s are in regular files not accessed for 1 days.\n",
+            val, in_kb ? "" : " bytes");
+
+    printf("----------\n");
 
     // read from totalsize2
-    read(totalsize2_stdout_to_report_read, &val, sizeof(val));
-    printf("%s\n", val);
+    read(totalsize2_stdout_to_report[0], &val, sizeof(val));
+    printf("A total of %s%s are in regular files accessed within 1 days.\n",
+            val, in_kb ? "" : " bytes");
+
+    // close remaining pipes for good measure
+    close(totalsize1_stdout_to_report[0]);
+    close(totalsize2_stdout_to_report[0]);
+
+    // wait for kids
+    int status;
+    waitpid(accessed1, &status, 0);
+    waitpid(accessed2, &status, 0);
+    waitpid(totalsize1, &status, 0);
+    waitpid(totalsize2, &status, 0);
+
+    return 0;
 }
+
