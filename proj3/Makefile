@@ -18,5 +18,8 @@ test:
 top:
 	top -U kelvin
 
+valgrind:
+	valgrind --leak-check=yes find ./pgm3test.d -print | ./report 5
+
 .PHONY: accessed totalsize report
 

@@ -15,7 +15,11 @@
 #define SECONDS_IN_DAY 86400
 
 void print_usage() {
-    fprintf(stderr, "This is accessed usage\n");
+    fprintf(stderr, "\nUsage: ls | accessed <num>\n"
+                    "\naccessed takes a list of files on stdin and prints those\n"
+                    "that have not been accessed in num days\n"
+                    "If num is negative, accessed prints the files\n"
+                    "that have been accessed within num days\n");
 }
 
 int main(int argc, char** argv) {
@@ -53,8 +57,10 @@ int main(int argc, char** argv) {
     while (scanf("%s", filename) != EOF) {
         if (stat(filename, &sb) == -1)
             continue;
+        if (!S_ISREG(sb.st_mode))
+            continue;
         if (num > 0) { // files which have not been accessed in days
-            if ((curr_time - sb.st_atime) > days_in_secs) 
+            if ((curr_time - sb.st_atime) > days_in_secs)
                 printf("%s\n", filename);
         } else { // files which have been accessed in days
             if ((curr_time - sb.st_atime) <= days_in_secs)

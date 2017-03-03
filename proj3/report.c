@@ -31,7 +31,7 @@ void signal_handler() {
 }
 
 void print_usage() {
-    fprintf(stderr, "\nUsage: ls | ./report <number of days> {-d <delay>} {-k}\n"
+    fprintf(stderr, "\nUsage: ls | report <number of days> {-d <delay>} {-k}\n"
                     "Creates a report of how recently files were modified\n"
                     "\nOptions\n"
                     "  -d num     number of seconds to delay between inputs\n"
@@ -311,12 +311,12 @@ int main(int argc, char** argv) {
     }
 
     // report doesn't use these at all
+    close(stdin_to_accessed1_stdin[0]);
+    close(stdin_to_accessed2_stdin[0]);
     close(accessed1_stdout_to_totalsize1_stdin[0]);
     close(accessed1_stdout_to_totalsize1_stdin[1]);
     close(accessed2_stdout_to_totalsize2_stdin[0]);
     close(accessed2_stdout_to_totalsize2_stdin[1]);
-    close(stdin_to_accessed1_stdin[0]);
-    close(stdin_to_accessed2_stdin[0]);
     close(totalsize1_stdout_to_report[1]);
     close(totalsize2_stdout_to_report[1]);
 
@@ -354,6 +354,7 @@ int main(int argc, char** argv) {
     if (read(totalsize1_stdout_to_report[0], &c, 1) == -1) {
         fprintf(stderr, "ERROR: Failed to read from totalsize1 output pipe\n");
         perror("read");
+        exit(EXIT_FAILURE);
     }
     while (c != '\n') {
         val[idx] = c;
@@ -361,6 +362,7 @@ int main(int argc, char** argv) {
         if (read(totalsize1_stdout_to_report[0], &c, 1) == -1) {
             fprintf(stderr, "ERROR: Failed to read from totalsize1 output pipe\n");
             perror("read");
+            exit(EXIT_FAILURE);
         }
     }
     val[idx] = '\0'; // terminate string
@@ -375,6 +377,7 @@ int main(int argc, char** argv) {
     if (read(totalsize2_stdout_to_report[0], &c, 1) == -1) {
         fprintf(stderr, "ERROR: Failed to read from totalsize1 output pipe\n");
         perror("read");
+        exit(EXIT_FAILURE);
     }
     while (c != '\n') {
         val[idx] = c;
@@ -382,6 +385,7 @@ int main(int argc, char** argv) {
         if (read(totalsize2_stdout_to_report[0], &c, 1) == -1) {
             fprintf(stderr, "ERROR: Failed to read from totalsize1 output pipe\n");
             perror("read");
+            exit(EXIT_FAILURE);
         }
     }
     printf("A total of %s%s are in regular files accessed within 1 days.\n",

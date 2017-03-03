@@ -12,7 +12,50 @@
 #include <unistd.h>
 
 void print_usage() {
-    fprintf(stderr, "This is totalsize usage\n");
+    fprintf(stderr, "Usage: ls | totalsize\n"
+                    "totalsize takes a white space separated list of files on\n"
+                    "its standard input and prints out total size of those it can\n"
+                    "access\n"
+                    "Environment Variables:\n"
+                    "  UNITS       When UNITS=k or UNITS=K the output is in kilobytes\n"
+                    "  TSTALL      When TSTALL=n totalsize waits n seconds between"
+                                   " processing inputs\n"
+                    "  TMOM\n      When TMOM=pid is a valid process id, totalsize signals\n"
+                    "              that process when it has tallied the total size\n");
+}
+
+struct Stat {
+    dev_t st_dev;
+    ino_t st_ino;
+    struct Stat* next;
+};
+
+/**
+ * return 0 on success and -1 on error
+ */
+int insert(struct Stat** head, struct stat* sb) {
+    struct Stat* s = (struct Stat*)malloc(sizeof(struct Stat));
+    if (s == NULL)
+        return -1;
+    s->st_dev = sb->st_dev;
+    s->st_ino = sb->st_ino;
+    s->next = *head;
+    *head = s;
+    return 0;
+}
+
+/**
+ * returns 1 when the list contains the node and 0 if it doesn't
+ */
+int contains(struct Stat* head, struct stat* sb) {
+    struct Stat* s = head;
+    while (s != NULL) {
+        if (s->st_dev == sb->st_dev && s->st_ino == sb->st_ino) {
+            return 1;
+        }
+        s = s->next;
+    }
+    return 0;
 }
 
 int main() {
@@ -23,7 +66,7 @@ int main() {
     long tstall = 0;
     if (tstall_str != NULL) {
         tstall = strtol(tstall_str, &endptr, 10);
-        if (errno != 0 || *endptr != '\0')
+        if (errno != 0 || *endptr != '\0' || tstall <= 0)
             tstall = 0;
     }
 
@@ -47,11 +90,20 @@ int main() {
     char filename[4096];
     long totalsize  = 0;
     struct stat sb;
+    struct Stat* stats;
     while (scanf("%s", filename) != EOF) {
         if (tstall)
             sleep(tstall);
         if (stat(filename, &sb) == -1)
             continue;
+        if (!S_ISREG(sb.st_mode))
+            continue;
+        if (sb.st_nlink > 1) {
+            if (contains(stats, &sb)) {
+                continue;
+            }
+            insert(&stats, &sb);
+        }
         totalsize += sb.st_size;
     }
 
