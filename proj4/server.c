@@ -24,6 +24,7 @@
 #define STATE_REQ_MOVE 5 // should request a move
 #define STATE_RES_MOVE 6 // waiting for a move request response
 
+//
 #define SEND_POSITIONS() \
     msg.type = XO; \
     msg.msg_char = 'x'; \
@@ -32,6 +33,14 @@
     msg.msg_char = 'o'; \
     write_message(oconn, &msg)
 
+//
+#define SEND_HANDLES() \
+    msg.type = OPP_HANDLE; \
+    msg.msg_str = xhandle; \
+    write_message(oconn, &msg); \
+    msg.type = OPP_HANDLE; \
+    msg.msg_str = ohandle; \
+    write_message(xconn, &msg)
 
 void printsin(struct sockaddr_in *sin, char *m1, char *m2 )
 {
@@ -229,16 +238,7 @@ int main()
                                 // start the game
                                 reset_board(board);
 
-                                // send x handle to o
-                                msg.type = OPP_HANDLE;
-                                msg.msg_str = xhandle;
-                                write_message(oconn, &msg);
-
-                                // send o handle to x
-                                msg.type = OPP_HANDLE;
-                                msg.msg_str = ohandle;
-                                write_message(xconn, &msg);
-
+                                SEND_HANDLES();
                                 SEND_POSITIONS();
 
                                 // adjust state
@@ -289,16 +289,7 @@ int main()
                                 // start the game
                                 reset_board(board);
 
-                                // send x handle to o
-                                msg.type = OPP_HANDLE;
-                                msg.msg_str = xhandle;
-                                write_message(oconn, &msg);
-
-                                // send o handle to x
-                                msg.type = OPP_HANDLE;
-                                msg.msg_str = ohandle;
-                                write_message(xconn, &msg);
-
+                                SEND_HANDLES();
                                 SEND_POSITIONS();
 
                                 // adjust state
