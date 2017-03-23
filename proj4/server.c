@@ -42,6 +42,9 @@
     msg.msg_str = ohandle; \
     write_message(xconn, &msg)
 
+/**
+ * Debugger method
+ */
 void printsin(struct sockaddr_in *sin, char *m1, char *m2 )
 {
     char fromip[INET_ADDRSTRLEN];
@@ -157,6 +160,11 @@ int main()
         exit(EXIT_FAILURE);
     }
 
+#ifdef DEBUG
+    fprintf(stderr, "SERVER::DEBUG:: listening on port: %d\n",
+            ntohs((unsigned short)localaddr->sin_port));
+#endif /* DEBUG */
+
     // write server address to file
     write_address(localaddr);
 
@@ -191,7 +199,9 @@ int main()
                             perror("server:accept");
                             exit(EXIT_FAILURE);
                         }
-                        printsin(&xaddr,"SERVER::", "accepted connection from");
+#ifdef DEBUG
+                        printsin(&xaddr,"SERVER::DEBUG::", "accepted connection from");
+#endif /* DEBUG */
 
                         // write who
                         msg.type = WHO;
@@ -207,7 +217,9 @@ int main()
                             perror("server:accept");
                             exit(EXIT_FAILURE);
                         }
-                        printsin(&oaddr,"SERVER::", "accepted connection from");
+#ifdef DEBUG
+                        printsin(&oaddr,"SERVER::DEBUG::", "accepted connection from");
+#endif /* DEBUG */
 
                         // write who
                         msg.type = WHO;
@@ -223,7 +235,11 @@ int main()
                 if (i == xconn) {
                     ecode = read_message(xconn, &msg);
                     if (ecode == -1) {
-                        fprintf(stderr, "x client disconnected\n");
+                        xconn = -1;
+#ifdef DEBUG
+                        fprintf(stderr, "SERVER::DEBUG:: x client disconnected\n");
+#endif /* DEBUG */
+                        break;
                     }
 
                     // TODO: check for other read_message errors
@@ -233,9 +249,17 @@ int main()
                             if (xstate != STATE_WHO) {
                                 // bail
                             }
+
                             strncpy(xhandle, msg.msg_str, MAX_HANDLE_LEN);
+#ifdef DEBUG
+                            fprintf(stderr, "SERVER::DEBUG:: x handle: %s\n", xhandle);
+#endif /* DEBUG */
+
                             if (ostate == STATE_WAIT) {
                                 // start the game
+#ifdef DEBUG
+                                fprintf(stderr, "SERVER::DEBUG:: starting game\n");
+#endif /* DEBUG */
                                 reset_board(board);
 
                                 SEND_HANDLES();
@@ -251,10 +275,13 @@ int main()
 
                         case MOVE:
                             if (xstate != STATE_RES_MOVE) {
-                                fprintf(stderr, "x should be in STATE_RES_MOVE. "
+                                fprintf(stderr, "SERVER::ERROR:: x should be in STATE_RES_MOVE. "
                                                 "It is in %d\n", xstate);
                                 exit(EXIT_FAILURE);
                             }
+#ifdef DEBUG
+                            fprintf(stderr, "SERVER::DEBUG:: Handling move from x: %d\n", msg.msg_int);
+#endif /* DEBUG */
 
                             // TODO: validate move
                             board[msg.msg_int] = 'x';
@@ -266,7 +293,7 @@ int main()
                             break;
 
                         default:
-                            fprintf(stderr, "SERVER:: Invalid message type from x player\n");
+                            fprintf(stderr, "SERVER::ERROR:: Invalid message type from x player\n");
                     }
                 }
 
@@ -274,7 +301,11 @@ int main()
                 if (i == oconn) {
                     ecode = read_message(oconn, &msg);
                     if (ecode == -1) {
-                        fprintf(stderr, "o client disconnected\n");
+                        oconn = -1;
+#ifdef DEBUG
+                        fprintf(stderr, "SERVER::DEBUG:: o client disconnected\n");
+#endif /* DEBUG */
+                        break;
                     }
 
                     // TODO: check for other read_message errors
@@ -284,9 +315,17 @@ int main()
                             if (ostate != STATE_WHO) {
                                 // bail
                             }
+
                             strncpy(ohandle, msg.msg_str, MAX_HANDLE_LEN);
+#ifdef DEBUG
+                            fprintf(stderr, "SERVER::DEBUG:: o handle %s\n", xhandle);
+#endif /* DEBUG */
+
                             if (xstate == STATE_WAIT) {
                                 // start the game
+#ifdef DEBUG
+                                fprintf(stderr, "SERVER::DEBUG:: starting game\n");
+#endif /* DEBUG */
                                 reset_board(board);
 
                                 SEND_HANDLES();
@@ -302,10 +341,13 @@ int main()
 
                         case MOVE:
                             if (ostate != STATE_RES_MOVE) {
-                                fprintf(stderr, "o should be in STATE_RES_MOVE. "
+                                fprintf(stderr, "SERVER::ERROR:: o should be in STATE_RES_MOVE. "
                                                 "It is in %d\n", ostate);
                                 exit(EXIT_FAILURE);
                             }
+#ifdef DEBUG
+                            fprintf(stderr, "SERVER::DEBUG:: Handling move from o: %d\n", msg.msg_int);
+#endif /* DEBUG */
 
                             // TODO: validate move
                             board[msg.msg_int] = 'o';
@@ -317,13 +359,17 @@ int main()
                             break;
 
                         default:
-                            fprintf(stderr, "SERVER:: Invalid message type from o player\n");
+                            fprintf(stderr, "SERVER::DEBUG:: Invalid message type from o player\n");
+                            exit(EXIT_FAILURE);
                     }
 
                 }
             }
 
             if (xstate == STATE_REQ_MOVE) {
+#ifdef DEBUG
+                fprintf(stderr, "SERVER::DEBUG:: resquesting move from x\n");
+#endif /* DEBUG */
                 // request move from x
                 msg.type = MOVE;
                 msg.msg_str = board;
@@ -333,6 +379,9 @@ int main()
                 ostate = STATE_OPP_MOVE; // this may be redundant
                 xstate = STATE_RES_MOVE;
             } else if (ostate == STATE_REQ_MOVE) {
+#ifdef DEBUG
+                fprintf(stderr, "SERVER::DEBUG:: resquesting move from o\n");
+#endif /* DEBUG */
                 // request move from o
                 msg.type = MOVE;
                 msg.msg_str = board;

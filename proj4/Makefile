@@ -1,11 +1,13 @@
+FLAGS = -D DEBUG
+
 all:
 	make server && make client
 server: server.o msg.o
-	gcc server.o msg.o -o server
+	gcc server.o msg.o $(FLAGS) -o server
 client: client.o msg.o
-	gcc client.o msg.o -o client
+	gcc client.o msg.o $(FLAGS) -o client
 server.o: server.c
-	gcc -c server.c
+	gcc $(FLAGS) -c server.c
 client.o: client.c
 	gcc -c client.c
 msg.o: msg.c
