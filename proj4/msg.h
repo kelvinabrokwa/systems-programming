@@ -28,6 +28,12 @@ struct Message {
     char type;
 };
 
+struct MsgDgram {
+    int nplayers; // number of player
+    char player1[MAX_HANDLE_LEN]; // player 1 handle
+    char player2[MAX_HANDLE_LEN]; // player 2 handle
+};
+
 int serialize_message(struct Message* msg);
 int deserialize_message(struct Message* msg);
 int write_message(int sockfd, struct Message* msg);

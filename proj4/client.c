@@ -18,10 +18,15 @@ int main(int argc, char** argv) {
     int ecode;
     struct addrinfo hints, *addrlist;
     struct sockaddr_in *server;
+    int query_mode = 0;
+
+    if (argc > 1 && strncmp(argv[1], "-q", 2) == 0) {
+        query_mode = 1;
+    }
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_socktype = query_mode ? SOCK_DGRAM : SOCK_STREAM;
     hints.ai_flags = AI_NUMERICSERV;
     hints.ai_protocol = 0;
     hints.ai_canonname = NULL;
@@ -32,41 +37,66 @@ int main(int argc, char** argv) {
     FILE *f = fopen("server_addr.txt", "r");
     if (f == NULL) {
         perror("fopen");
-        fprintf(stderr, "Could not ope server_addr.txt file\n");
+        fprintf(stderr, "CLIENT::ERROR:: Could not ope server_addr.txt file\n");
         exit(EXIT_FAILURE);
     }
     char server_ip[INET_ADDRSTRLEN];
-    char server_port[10];
+    char server_stream_port[10];
+    char server_dgram_port[10];
     if (fgets(server_ip, INET_ADDRSTRLEN, f) == NULL) {
-        perror("fgets");
+        perror("CLIENT::ERROR:: fgets");
         exit(EXIT_FAILURE);
     }
-    if (fgets(server_port, INET_ADDRSTRLEN, f) == NULL) {
-        perror("fgets");
+    if (fgets(server_stream_port, INET_ADDRSTRLEN, f) == NULL) {
+        perror("CLIENT::ERROR:: fgets");
+        exit(EXIT_FAILURE);
+    }
+    if (fgets(server_dgram_port, INET_ADDRSTRLEN, f) == NULL) {
+        perror("CLIENT::ERROR:: fgets");
         exit(EXIT_FAILURE);
     }
     fclose(f);
 
-    server_ip[strlen(server_ip) - 1] = '\0'; // strip new line character from server_ip
+    // strip new line characters
+    server_ip[strlen(server_ip) - 1] = '\0';
+    server_stream_port[strlen(server_stream_port) - 1] = '\0';
 
-    ecode = getaddrinfo(server_ip, server_port, &hints, &addrlist);
+    ecode = getaddrinfo(server_ip, query_mode ? server_dgram_port : server_stream_port, &hints, &addrlist);
     if (ecode != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ecode));
+        fprintf(stderr, "CLIENT::ERROR:: getaddrinfo: %s\n", gai_strerror(ecode));
         exit(EXIT_FAILURE);
     }
 
     server = (struct sockaddr_in*)addrlist->ai_addr;
 
     sock = socket(addrlist->ai_family, addrlist->ai_socktype, 0);
-
     if (sock < 0) {
-        perror("client:socket");
+        perror("CLIENT::ERROR:: socket");
         exit(EXIT_FAILURE);
     }
 
     if (connect(sock, (struct sockaddr*)server, sizeof(struct sockaddr_in)) < 0) {
-        perror("client:connect");
+        perror("CLIENT::ERROR:: connect");
         exit(EXIT_FAILURE);
+    }
+
+    if (query_mode) {
+        struct MsgDgram msg;
+        send(sock, &msg, sizeof(msg), 0);
+        recv(sock, &msg, sizeof(msg), 0);
+        if (msg.nplayers == 2) {
+            printf("There is a game in progress\n"
+                   "player 1: %s\n"
+                   "player 2: %s\n",
+                   msg.player1, msg.player2);
+        } else if (msg.nplayers == 1) {
+            printf("There is one player connected\n"
+                   "player 1: %s\n",
+                   msg.player1);
+        } else {
+            printf("There are no players connected\n");
+        }
+        return 0;
     }
 
     struct Message msg;
@@ -88,7 +118,7 @@ int main(int argc, char** argv) {
         msg.msg_str = handle;
         write_message(sock, &msg);
     } else {
-        fprintf(stderr, "CLIENT:: Expected WHO message\n");
+        fprintf(stderr, "CLIENT::ERROR:: Expected WHO message\n");
         exit(EXIT_FAILURE);
     }
 
@@ -131,7 +161,14 @@ int main(int argc, char** argv) {
         scanf("%d", &move);
 
         if (move < 0 || move > 8) {
-            fprintf(stderr, "CLIENT:: Invalid move. Move must be an integer between 0 and 8 (inclusive)");
+            fprintf(stderr, "CLIENT:: Invalid move. "
+                            "Move must be an integer between 0 and 8 (inclusive)\n");
+            exit(EXIT_FAILURE);
+        }
+
+        if (board[move] != ' ') {
+            fprintf(stderr, "CLIENT:: Invalid move. "
+                            "This position is already occupied\n");
             exit(EXIT_FAILURE);
         }
 

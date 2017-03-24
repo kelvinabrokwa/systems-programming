@@ -1,16 +1,17 @@
 /**
  * server.c
  */
-#include <stdio.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <stdlib.h>
 #include <arpa/inet.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/select.h>
+#include <assert.h>
 #include <errno.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include "msg.h"
 
@@ -57,24 +58,6 @@ void printsin(struct sockaddr_in *sin, char *m1, char *m2 )
 }
 
 /**
- * Write machine name (hostname), IP address,
- * virtual circuit/datagram ports to file
- */
-void write_address(struct sockaddr_in *localaddr)
-{
-    char ip[INET_ADDRSTRLEN];
-    FILE *f = fopen("server_addr.txt", "w");
-    if (f == NULL) {
-        perror("fopen");
-        exit(EXIT_FAILURE);
-    }
-    fprintf(f, "%s\n%d",
-            inet_ntop(AF_INET, &(localaddr->sin_addr.s_addr), ip, sizeof(ip)),
-            ntohs((unsigned short)localaddr->sin_port));
-    fclose(f);
-}
-
-/**
  * returns 1 if the player has won a game and 0 if they haven't
  */
 int has_won(char board[10], char xo)
@@ -118,18 +101,23 @@ int main()
     int listener; // fd for socket upon which we get connection requests
     int xconn; // fd for x socket
     int oconn; // fd for o socket
+    int sock_dgram_fd; // datagram socket
     int xstate;
     int ostate;
     int ecode;
     int nbytes;
-    struct sockaddr_in *localaddr, oaddr, xaddr;
+    struct sockaddr_in *localaddr, oaddr, xaddr, dgram_sin;
     struct addrinfo hints, *addrlist;
     socklen_t addrlen;
     char board[10];
     char *endptr;
     struct Message msg;
     char xhandle[MAX_HANDLE_LEN], ohandle[MAX_HANDLE_LEN];
+    struct MsgDgram msg_dgram;
 
+    //
+    // Set up stream socket listener
+    //
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
@@ -141,7 +129,7 @@ int main()
 
     ecode = getaddrinfo(NULL, "0", &hints, &addrlist);
     if (ecode != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(ecode));
+        fprintf(stderr, "SERVER::ERROR:: getaddrinfo: %s\n", gai_strerror(ecode));
         exit(EXIT_FAILURE);
     }
     localaddr = (struct sockaddr_in*)addrlist->ai_addr;
@@ -151,24 +139,66 @@ int main()
         exit(EXIT_FAILURE);
     }
     if (bind(listener, (struct sockaddr*)localaddr, sizeof(struct sockaddr_in)) < 0) {
-        perror("serverr:bind");
+        perror("SERVER::ERROR:: bind");
         exit(EXIT_FAILURE);
     }
     addrlen = sizeof(struct sockaddr_in);
     if (getsockname(listener, (struct sockaddr*)localaddr, &addrlen) < 0) {
-        perror("server:getsockname");
+        perror("SERVER::ERROR:: getsockname");
         exit(EXIT_FAILURE);
     }
+    listen(listener, 4);
+
+    // write server machine and port to file
+    char ip[INET_ADDRSTRLEN];
+    FILE *f = fopen("server_addr.txt", "w");
+    if (f == NULL) {
+        perror("fopen");
+        exit(EXIT_FAILURE);
+    }
+    fprintf(f, "%s\n", inet_ntop(AF_INET, &(localaddr->sin_addr.s_addr), ip, sizeof(ip)));
+    fprintf(f, "%d\n", ntohs((unsigned short)localaddr->sin_port));
 
 #ifdef DEBUG
-    fprintf(stderr, "SERVER::DEBUG:: listening on port: %d\n",
+    fprintf(stderr, "SERVER::DEBUG:: stream server listening on port: %d\n",
             ntohs((unsigned short)localaddr->sin_port));
 #endif /* DEBUG */
 
-    // write server address to file
-    write_address(localaddr);
+    //
+    // Set up datagram socket listener
+    //
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_flags = AI_NUMERICSERV | AI_PASSIVE;
+    hints.ai_protocol = 0;
+    hints.ai_canonname = NULL;
+    hints.ai_addr = NULL;
+    hints.ai_next = NULL;
 
-    listen(listener, 4);
+    ecode = getaddrinfo(NULL, "13107", &hints, &addrlist);
+    if (ecode != 0) {
+        fprintf(stderr, "SERVER::ERROR:: getaddrinfo: %s\n", gai_strerror(ecode));
+        exit(EXIT_FAILURE);
+    }
+    localaddr = (struct sockaddr_in*)addrlist->ai_addr;
+#ifdef DEBUG
+    printsin(localaddr, "SERVER::DEBUG:: RECV_UDP", "Local socket is");
+#endif /* DEBUG */
+    sock_dgram_fd = socket(addrlist->ai_family, addrlist->ai_socktype, 0);
+    if (sock_dgram_fd < 0) {
+        perror("SERVER::ERROR:: Could not create UDP socket");
+        exit(EXIT_FAILURE);
+    }
+    if (bind(sock_dgram_fd, (struct sockaddr*)localaddr, sizeof(struct sockaddr_in))) {
+        perror("SERVER::ERROR:: bind");
+        exit(EXIT_FAILURE);
+    }
+
+    // write datagram port to file
+    fprintf(f, "%d", ntohs((unsigned short)localaddr->sin_port));
+    fclose(f);
+
 
     xconn = -1;
     oconn = -1;
@@ -179,6 +209,7 @@ int main()
     while (1) {
         FD_ZERO(&rfds);
         FD_SET(listener, &rfds);
+        FD_SET(sock_dgram_fd, &rfds);
         if (xconn != -1)
             FD_SET(xconn, &rfds);
         if (oconn != -1)
@@ -192,7 +223,23 @@ int main()
         for (i = 0; i <= FD_SETSIZE; i++) {
             if (FD_ISSET(i, &rfds)) {
                 // check if a new client is trying to connect
-                if (i == listener) {
+                if (i == sock_dgram_fd) {
+                    addrlen = sizeof(dgram_sin);
+                    recvfrom(sock_dgram_fd, &msg_dgram, sizeof(msg_dgram), 0, (struct sockaddr*)&dgram_sin, &addrlen);
+#ifdef DEBUG
+                    printsin(&dgram_sin, "SERVER::DEBUG::", "Packet from");
+#endif /* DEBUG */
+                    msg_dgram.nplayers = 0;
+                    if (xconn != -1) {
+                        msg_dgram.nplayers++;
+                        strncpy(msg_dgram.player1, xhandle, MAX_HANDLE_LEN);
+                    }
+                    if (oconn != -1) {
+                        msg_dgram.nplayers++;
+                        strncpy(msg_dgram.nplayers == 1 ? msg_dgram.player1 : msg_dgram.player2, ohandle, MAX_HANDLE_LEN);
+                    }
+                    sendto(sock_dgram_fd, &msg_dgram, sizeof(msg_dgram), 0, (struct sockaddr*)&dgram_sin, addrlen);
+                } else if (i == listener) {
                     if (xconn == -1) {
                         xconn = accept(listener, (struct sockaddr*)&xaddr, &addrlen);
                         if (xconn < 0) {
@@ -200,7 +247,7 @@ int main()
                             exit(EXIT_FAILURE);
                         }
 #ifdef DEBUG
-                        printsin(&xaddr,"SERVER::DEBUG::", "accepted connection from");
+                        printsin(&xaddr, "SERVER::DEBUG::", "accepted connection from");
 #endif /* DEBUG */
 
                         // write who
@@ -283,7 +330,7 @@ int main()
                             fprintf(stderr, "SERVER::DEBUG:: Handling move from x: %d\n", msg.msg_int);
 #endif /* DEBUG */
 
-                            // TODO: validate move
+                            assert(board[msg.msg_int] == ' ');
                             board[msg.msg_int] = 'x';
 
                             // adjust state
@@ -349,7 +396,7 @@ int main()
                             fprintf(stderr, "SERVER::DEBUG:: Handling move from o: %d\n", msg.msg_int);
 #endif /* DEBUG */
 
-                            // TODO: validate move
+                            assert(board[msg.msg_int] == ' ');
                             board[msg.msg_int] = 'o';
 
                             // adjust state
