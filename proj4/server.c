@@ -43,6 +43,18 @@
     msg.msg_str = ohandle; \
     write_message(xconn, &msg)
 
+//
+#define SEND_RESULT(xo) \
+    msg.type = RESULT; \
+    msg.msg_char = xo; \
+    msg.msg_str = board; \
+    write_message(xconn, &msg); \
+    write_message(oconn, &msg); \
+    close(xconn); \
+    close(oconn); \
+    xconn = -1; \
+    oconn = -1
+
 /**
  * Debugger method
  */
@@ -52,7 +64,7 @@ void printsin(struct sockaddr_in *sin, char *m1, char *m2 )
 
     printf ("%s %s:\n", m1, m2);
     printf ("  family %d, addr %s, port %d\n",
-            sin -> sin_family,
+            sin->sin_family,
 	        inet_ntop(AF_INET, &(sin->sin_addr.s_addr), fromip, sizeof(fromip)),
             ntohs((unsigned short)(sin -> sin_port)));
 }
@@ -76,7 +88,7 @@ int has_won(char board[10], char xo)
         {2, 4, 6}
     };
 
-    for (i = 0; i < 9; i++) {
+    for (i = 0; i < 8; i++) {
         if (board[wins[i][0]] == xo &&
             board[wins[i][1]] == xo &&
             board[wins[i][2]] == xo) {
@@ -110,6 +122,7 @@ int main()
     struct addrinfo hints, *addrlist;
     socklen_t addrlen;
     char board[10];
+    char msg_buf[MAX_MSG_LEN];
     char *endptr;
     struct Message msg;
     char xhandle[MAX_HANDLE_LEN], ohandle[MAX_HANDLE_LEN];
@@ -199,7 +212,8 @@ int main()
     fprintf(f, "%d", ntohs((unsigned short)localaddr->sin_port));
     fclose(f);
 
-
+    // when these file descriptors are -1
+    // no one is connected on these sockets
     xconn = -1;
     oconn = -1;
 
@@ -225,7 +239,8 @@ int main()
                 // check if a new client is trying to connect
                 if (i == sock_dgram_fd) {
                     addrlen = sizeof(dgram_sin);
-                    recvfrom(sock_dgram_fd, &msg_dgram, sizeof(msg_dgram), 0, (struct sockaddr*)&dgram_sin, &addrlen);
+                    recvfrom(sock_dgram_fd, &msg_dgram, sizeof(msg_dgram), 0,
+                            (struct sockaddr*)&dgram_sin, &addrlen);
 #ifdef DEBUG
                     printsin(&dgram_sin, "SERVER::DEBUG::", "Packet from");
 #endif /* DEBUG */
@@ -236,9 +251,11 @@ int main()
                     }
                     if (oconn != -1) {
                         msg_dgram.nplayers++;
-                        strncpy(msg_dgram.nplayers == 1 ? msg_dgram.player1 : msg_dgram.player2, ohandle, MAX_HANDLE_LEN);
+                        strncpy(msg_dgram.nplayers == 1 ?
+                                msg_dgram.player1 : msg_dgram.player2, ohandle, MAX_HANDLE_LEN);
                     }
-                    sendto(sock_dgram_fd, &msg_dgram, sizeof(msg_dgram), 0, (struct sockaddr*)&dgram_sin, addrlen);
+                    sendto(sock_dgram_fd, &msg_dgram, sizeof(msg_dgram), 0,
+                            (struct sockaddr*)&dgram_sin, addrlen);
                 } else if (i == listener) {
                     if (xconn == -1) {
                         xconn = accept(listener, (struct sockaddr*)&xaddr, &addrlen);
@@ -247,7 +264,7 @@ int main()
                             exit(EXIT_FAILURE);
                         }
 #ifdef DEBUG
-                        printsin(&xaddr, "SERVER::DEBUG::", "accepted connection from");
+                        printsin(&xaddr, "SERVER::DEBUG::", "accepted x connection from");
 #endif /* DEBUG */
 
                         // write who
@@ -265,7 +282,7 @@ int main()
                             exit(EXIT_FAILURE);
                         }
 #ifdef DEBUG
-                        printsin(&oaddr,"SERVER::DEBUG::", "accepted connection from");
+                        printsin(&oaddr,"SERVER::DEBUG::", "accepted o connection from");
 #endif /* DEBUG */
 
                         // write who
@@ -280,6 +297,8 @@ int main()
 
                 // read message from x
                 if (i == xconn) {
+                    msg.msg_str = msg_buf; // make sure msg.msg_str has enough space to
+                                           // hold any message string
                     ecode = read_message(xconn, &msg);
                     if (ecode == -1) {
                         xconn = -1;
@@ -318,6 +337,7 @@ int main()
                             } else {
                                 xstate = STATE_WAIT;
                             }
+
                             break;
 
                         case MOVE:
@@ -333,19 +353,30 @@ int main()
                             assert(board[msg.msg_int] == ' ');
                             board[msg.msg_int] = 'x';
 
-                            // adjust state
-                            ostate = STATE_REQ_MOVE;
-                            xstate = STATE_OPP_MOVE;
+                            if (has_won(board, 'x')) {
+                                // tell both that x won
+#ifdef DEBUG
+                                fprintf(stderr, "SERVER::DEBUG:: x wins\n");
+#endif
+                                SEND_RESULT('x');
+                            } else {
+                                // adjust state
+                                ostate = STATE_REQ_MOVE;
+                                xstate = STATE_OPP_MOVE;
+                            }
 
                             break;
 
                         default:
                             fprintf(stderr, "SERVER::ERROR:: Invalid message type from x player\n");
+                            exit(EXIT_FAILURE);
                     }
                 }
 
                 // read message from o
                 if (i == oconn) {
+                    msg.msg_str = msg_buf; // make sure msg.msg_str has enough space to
+                                           // hold any message string
                     ecode = read_message(oconn, &msg);
                     if (ecode == -1) {
                         oconn = -1;
@@ -384,6 +415,7 @@ int main()
                             } else {
                                 ostate = STATE_WAIT;
                             }
+
                             break;
 
                         case MOVE:
@@ -399,9 +431,17 @@ int main()
                             assert(board[msg.msg_int] == ' ');
                             board[msg.msg_int] = 'o';
 
-                            // adjust state
-                            xstate = STATE_REQ_MOVE;
-                            ostate = STATE_OPP_MOVE;
+                            if (has_won(board, 'o')) {
+                                // tell both that x won
+#ifdef DEBUG
+                                fprintf(stderr, "SERVER::DEBUG:: o wins\n");
+#endif
+                                SEND_RESULT('o');
+                            } else {
+                                // adjust state
+                                xstate = STATE_REQ_MOVE;
+                                ostate = STATE_OPP_MOVE;
+                            }
 
                             break;
 
@@ -409,7 +449,6 @@ int main()
                             fprintf(stderr, "SERVER::DEBUG:: Invalid message type from o player\n");
                             exit(EXIT_FAILURE);
                     }
-
                 }
             }
 

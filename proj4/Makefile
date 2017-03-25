@@ -1,4 +1,4 @@
-FLAGS = -D DEBUG
+FLAGS = -D DEBUG -g
 
 all:
 	make server && make client
@@ -9,9 +9,9 @@ client: client.o msg.o
 server.o: server.c
 	gcc $(FLAGS) -c server.c
 client.o: client.c
-	gcc -c client.c
+	gcc $(FLAGS) -c client.c
 msg.o: msg.c
-	gcc -c msg.c
+	gcc $(FLAGS) -c msg.c
 clean:
 	rm -r server.o client.o msg.o server client
 .PHONY: clean

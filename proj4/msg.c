@@ -43,12 +43,12 @@ int write_message(int sockfd, struct Message* msg)
             break;
 
         case RESULT:
-            sprintf(buf, "%c%s%c", RESULT, msg->msg_str, MSG_DELIMITER);
+            sprintf(buf, "%c%c%s%c", RESULT, msg->msg_char, msg->msg_str, MSG_DELIMITER);
             break;
     }
 
 #ifdef DEBUG
-    fprintf(stderr, "WRITE MESSAGE::%s\n", buf);
+    fprintf(stderr, "MSG::DEBUG:: write message: |%s|\n", buf);
 #endif
 
     // send it
@@ -58,6 +58,9 @@ int write_message(int sockfd, struct Message* msg)
 }
 
 /**
+ * If you are reading a message that contains a string
+ * you need to make sure msg->msg_str points to a buffer large enough
+ * to store that string
  * returns the message type read and stores info into a buffer
  * returns -1 if the client has disconnected
  * returns -2 if the message is fudged up
@@ -69,8 +72,6 @@ int read_message(int sockfd, struct Message* msg)
     char c, *p, type;
     int nbytes;
     char* endptr;
-
-    // TODO: disconnect handling
 
     do {
         if ((nbytes = read(sockfd, &c, 1)) != 1) {
@@ -85,6 +86,9 @@ int read_message(int sockfd, struct Message* msg)
         i++;
     } while (c != MSG_DELIMITER);
 
+#ifdef DEBUG
+    fprintf(stderr, "MSG::DEBUG:: read message: |%s|\n", buf);
+#endif
     type = buf[0];
     char* b = buf + 1;
 
@@ -96,13 +100,7 @@ int read_message(int sockfd, struct Message* msg)
                 msg->msg_str = NULL;
             } else {
                 // read a response
-                msg->msg_str = (char *)malloc(MAX_HANDLE_LEN);
-                p = msg->msg_str;
-                while ((c = *b) != MSG_DELIMITER) {
-                    *p = c;
-                    p++;
-                    b++;
-                }
+                strncpy(msg->msg_str, b, strlen(b));
             }
             break;
 
@@ -121,10 +119,7 @@ int read_message(int sockfd, struct Message* msg)
                     return -2;
                 }
             } else if (strlen(b) == 9) {
-                // read a move request
-                // contains the board
-                // FIXME
-                msg->msg_str = b;
+                strncpy(msg->msg_str, b, 9);
             } else {
                 fprintf(stderr, "MSG::READ::Invalid MOVE message length: %lu %s\n", strlen(b), b);
                 return -2;
@@ -147,10 +142,12 @@ int read_message(int sockfd, struct Message* msg)
 
         case RESULT:
             msg->type = RESULT;
-            if (strlen(b) != 9) {
+            if (strlen(b) != 10) {
                 fprintf(stderr, "MSG::READ::Invalid RESULT message length: %lu\n", strlen(b));
                 return -2;
             }
+            msg->msg_char = *b;
+            b++;
             strncpy(msg->msg_str, b, strlen(b));
             break;
 
