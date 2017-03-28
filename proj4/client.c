@@ -29,9 +29,6 @@ int get_server_info(char *server_ip, char *server_stream_port, char *server_dgra
     // read server information from file
     FILE *f = fopen("server_addr.txt", "r");
     if (f == NULL) {
-        //perror("CLIENT::ERROR:: fopen");
-        //fprintf(stderr, "CLIENT::ERROR:: Could not open server_addr.txt file\n");
-        //exit(EXIT_FAILURE);
         return -1;
     }
     if (fgets(server_ip, INET_ADDRSTRLEN, f) == NULL) {
@@ -52,6 +49,7 @@ int get_server_info(char *server_ip, char *server_stream_port, char *server_dgra
     server_ip[strlen(server_ip) - 1] = '\0';
     server_stream_port[strlen(server_stream_port) - 1] = '\0';
 
+    return 0;
 }
 
 int main(int argc, char** argv)
@@ -84,7 +82,7 @@ int main(int argc, char** argv)
 
 #ifdef DEBUG
     fprintf(stderr, "CLIENT::DEBUG:: timeout = %ld\n", timeout);
-#endif
+#endif /* DEBUG */
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_INET;
@@ -101,11 +99,11 @@ int main(int argc, char** argv)
     if (get_server_info(server_ip, server_stream_port, server_dgram_port) == -1) {
 #ifdef DEBUG
         fprintf(stderr, "CLIENT::DEBUG:: server_addr.txt does not exist. Retrying in 60 seconds.\n");
-#endif
+#endif /* DEBUG */
         sleep(60);
 #ifdef DEBUG
         fprintf(stderr, "CLIENT::DEBUG:: Retrying to access server_addr.txt.\n");
-#endif
+#endif /* DEBUG */
         if (get_server_info(server_ip, server_stream_port, server_dgram_port) == -1) {
             fprintf(stderr, "server_addr.txt still doesn't exist. Quitting client.\n");
             exit(EXIT_FAILURE);
@@ -181,7 +179,10 @@ int main(int argc, char** argv)
 
 
     // read WHO req
-    read_message(sock, &msg);
+    if (read_message(sock, &msg) == -1) {
+        printf("Server disconnected\nQuitting client\n");
+        exit(EXIT_FAILURE);
+    }
     if (msg.type == WHO) {
         // respond to WHO req
         // request handle
@@ -196,7 +197,10 @@ int main(int argc, char** argv)
 
     // read opponent handle
     msg.msg_str = opp_handle;
-    read_message(sock, &msg);
+    if (read_message(sock, &msg) == -1) {
+        printf("Server disconnected\nQuitting client\n");
+        exit(EXIT_FAILURE);
+    }
     if (msg.type != OPP_HANDLE) {
         fprintf(stderr, "CLIENT::ERROR:: Expected OPP_HANDLE message");
         exit(EXIT_FAILURE);
@@ -205,7 +209,7 @@ int main(int argc, char** argv)
     printf("You are playing: %s\n", opp_handle);
 
     // read XO
-    read_message(sock, &msg);
+    if (read_message(sock, &msg) == -1) {}
     if (msg.type == XO) {
         xo = msg.msg_char;
     } else {
@@ -218,7 +222,10 @@ int main(int argc, char** argv)
     while  (1) {
         // read move request
         msg.msg_str = board;
-        read_message(sock, &msg);
+        if (read_message(sock, &msg) == -1) {
+            printf("Server disconnected\nQuitting client\n");
+            exit(EXIT_FAILURE);
+        }
         if (msg.type != MOVE && msg.type != RESULT) {
             fprintf(stderr, "CLIENT:: Expected MOVE or RESULT message. Received %c\n", msg.type);
             exit(EXIT_FAILURE);
@@ -240,6 +247,8 @@ int main(int argc, char** argv)
         // prompt user for move
         printf("MOVE: ");
         scanf("%d", &move);
+
+        move--; // translate move into board index
 
         if (move < 0 || move > 8) {
             fprintf(stderr, "CLIENT:: Invalid move. "

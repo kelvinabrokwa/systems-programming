@@ -15,7 +15,6 @@
 int write_message(int sockfd, struct Message* msg)
 {
     char buf[MAX_MSG_LEN];
-    int len;
 
     switch (msg->type) {
         case WHO:
@@ -49,7 +48,7 @@ int write_message(int sockfd, struct Message* msg)
 
 #ifdef DEBUG
     fprintf(stderr, "MSG::DEBUG:: write message: |%s|\n", buf);
-#endif
+#endif /* DEBUG */
 
     // send it
     write(sockfd, buf, strlen(buf) + 1);
@@ -69,16 +68,19 @@ int read_message(int sockfd, struct Message* msg)
 {
     char buf[MAX_MSG_LEN];
     int i = 0;
-    char c, *p, type;
+    char c, type;
     int nbytes;
     char* endptr;
 
     do {
         if ((nbytes = read(sockfd, &c, 1)) != 1) {
             if (nbytes == 0) {
+#ifdef DEBUG
+                fprintf(stderr, "MSG::DEBUG:: server disconnected\n");
+#endif
                 return -1;
             } else {
-                fprintf(stderr, "MSG:: read_message:: Could not read byte. Read %d\n", nbytes);
+                fprintf(stderr, "MSG::ERROR:: read_message:: Could not read byte. Read %d\n", nbytes);
                 exit(EXIT_FAILURE);
             }
         }
@@ -88,7 +90,7 @@ int read_message(int sockfd, struct Message* msg)
 
 #ifdef DEBUG
     fprintf(stderr, "MSG::DEBUG:: read message: |%s|\n", buf);
-#endif
+#endif /* DEBUG */
     type = buf[0];
     char* b = buf + 1;
 
@@ -163,11 +165,11 @@ int read_message(int sockfd, struct Message* msg)
  */
 void print_board(char board[10])
 {
-    printf("%c | %c | %c\n"
-           "------------\n"
-           "%c | %c | %c\n"
-           "------------\n"
-           "%c | %c | %c\n",
+    printf(" %c | %c | %c\n"
+           "-----------\n"
+           " %c | %c | %c\n"
+           "-----------\n"
+           " %c | %c | %c\n",
            board[0], board[1], board[2],
            board[3], board[4], board[5],
            board[6], board[7], board[8]);

@@ -15,6 +15,7 @@
 
 #include "msg.h"
 
+#define SERVER_QUEUE_LEN 4
 //
 // if player a is in STATE_REQ_MOVE or STATE_RES_MOVE
 // player b should be in STATE_OPP_MOVE
@@ -25,7 +26,7 @@
 #define STATE_REQ_MOVE 5 // should request a move
 #define STATE_RES_MOVE 6 // waiting for a move request response
 
-//
+// tell both clients if they are x or o
 #define SEND_POSITIONS() \
     msg.type = XO; \
     msg.msg_char = 'x'; \
@@ -34,7 +35,7 @@
     msg.msg_char = 'o'; \
     write_message(oconn, &msg)
 
-//
+// inform each client of the other's handle
 #define SEND_HANDLES() \
     msg.type = OPP_HANDLE; \
     msg.msg_str = xhandle; \
@@ -43,7 +44,7 @@
     msg.msg_str = ohandle; \
     write_message(xconn, &msg)
 
-//
+// inform both clients of the winner
 #define SEND_RESULT(xo) \
     msg.type = RESULT; \
     msg.msg_char = xo; \
@@ -99,6 +100,21 @@ int has_won(char board[10], char xo)
     return 0;
 }
 
+/**
+ * looks for empty spaces on the board
+ * returns 1 if the game is over and tied, 0 else
+ */
+int has_tied(char board[10])
+{
+    int i;
+    for (i = 0; i < 10; i++) {
+        if (board[i] == ' ') {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 void reset_board(char board[10])
 {
     int i;
@@ -106,7 +122,6 @@ void reset_board(char board[10])
         board[i] = ' ';
     board[9] = '\0';
 }
-
 
 int main()
 {
@@ -117,15 +132,13 @@ int main()
     int xstate;
     int ostate;
     int ecode;
-    int nbytes;
     struct sockaddr_in *localaddr, oaddr, xaddr, dgram_sin;
     struct addrinfo hints, *addrlist;
     socklen_t addrlen;
     char board[10];
     char msg_buf[MAX_MSG_LEN];
-    char *endptr;
-    struct Message msg;
     char xhandle[MAX_HANDLE_LEN], ohandle[MAX_HANDLE_LEN];
+    struct Message msg;
     struct MsgDgram msg_dgram;
 
     //
@@ -160,7 +173,7 @@ int main()
         perror("SERVER::ERROR:: getsockname");
         exit(EXIT_FAILURE);
     }
-    listen(listener, 4);
+    listen(listener, SERVER_QUEUE_LEN);
 
     // write server machine and port to file
     char ip[INET_ADDRSTRLEN];
@@ -169,13 +182,16 @@ int main()
         perror("fopen");
         exit(EXIT_FAILURE);
     }
-    fprintf(f, "%s\n", inet_ntop(AF_INET, &(localaddr->sin_addr.s_addr), ip, sizeof(ip)));
+    gethostname(ip, INET_ADDRSTRLEN);
+    fprintf(f, "%s\n", ip);
     fprintf(f, "%d\n", ntohs((unsigned short)localaddr->sin_port));
 
 #ifdef DEBUG
     fprintf(stderr, "SERVER::DEBUG:: stream server listening on port: %d\n",
             ntohs((unsigned short)localaddr->sin_port));
 #endif /* DEBUG */
+
+    freeaddrinfo(addrlist);
 
     //
     // Set up datagram socket listener
@@ -219,7 +235,6 @@ int main()
 
     fd_set rfds;
     int i;
-    char c;
     while (1) {
         FD_ZERO(&rfds);
         FD_SET(listener, &rfds);
@@ -301,9 +316,14 @@ int main()
                                            // hold any message string
                     ecode = read_message(xconn, &msg);
                     if (ecode == -1) {
+                        close(xconn);
+                        if (oconn != -1)
+                            close(oconn);
                         xconn = -1;
+                        oconn = -1;
 #ifdef DEBUG
                         fprintf(stderr, "SERVER::DEBUG:: x client disconnected\n");
+                        fprintf(stderr, "SERVER::DEBUG:: disconnecting from o client\n");
 #endif /* DEBUG */
                         break;
                     }
@@ -359,6 +379,12 @@ int main()
                                 fprintf(stderr, "SERVER::DEBUG:: x wins\n");
 #endif
                                 SEND_RESULT('x');
+                            } else if (has_tied(board)) {
+                                // tell both that it was a tie
+#ifdef DEBUG
+                                fprintf(stderr, "SERVER::DEBUG:: tie\n");
+#endif
+                                SEND_RESULT(' ');
                             } else {
                                 // adjust state
                                 ostate = STATE_REQ_MOVE;
@@ -379,9 +405,14 @@ int main()
                                            // hold any message string
                     ecode = read_message(oconn, &msg);
                     if (ecode == -1) {
+                        close(oconn);
+                        if (xconn != -1)
+                            close(xconn);
                         oconn = -1;
+                        xconn = -1;
 #ifdef DEBUG
                         fprintf(stderr, "SERVER::DEBUG:: o client disconnected\n");
+                        fprintf(stderr, "SERVER::DEBUG:: disconnecting from x client\n");
 #endif /* DEBUG */
                         break;
                     }
@@ -437,6 +468,12 @@ int main()
                                 fprintf(stderr, "SERVER::DEBUG:: o wins\n");
 #endif
                                 SEND_RESULT('o');
+                            } else if (has_tied(board)) {
+                                // tell both that it was a tie
+#ifdef DEBUG
+                                fprintf(stderr, "SERVER::DEBUG:: tie\n");
+#endif
+                                SEND_RESULT(' ');
                             } else {
                                 // adjust state
                                 xstate = STATE_REQ_MOVE;

@@ -1,4 +1,4 @@
-FLAGS = -D DEBUG -g
+FLAGS = -D DEBUG -g -Wall
 
 all:
 	make server && make client
