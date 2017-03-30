@@ -16,6 +16,7 @@
 #include "msg.h"
 
 #define SERVER_QUEUE_LEN 4
+
 //
 // if player a is in STATE_REQ_MOVE or STATE_RES_MOVE
 // player b should be in STATE_OPP_MOVE
@@ -326,9 +327,14 @@ int main()
                         fprintf(stderr, "SERVER::DEBUG:: disconnecting from o client\n");
 #endif /* DEBUG */
                         break;
+                    } else if (ecode == -2) {
+                        fprintf(stderr, "SERVER::ERROR:: incorrectly formatted message\n");
+                        close(xconn);
+                        if (oconn != -1)
+                            close(oconn);
+                        xconn = -1;
+                        oconn = -1;
                     }
-
-                    // TODO: check for other read_message errors
 
                     switch (msg.type) {
                         case WHO:
@@ -415,9 +421,14 @@ int main()
                         fprintf(stderr, "SERVER::DEBUG:: disconnecting from x client\n");
 #endif /* DEBUG */
                         break;
+                    } else if (ecode == -2) {
+                        fprintf(stderr, "SERVER::ERROR:: incorrectly formatted message\n");
+                        close(oconn);
+                        if (xconn != -1)
+                            close(xconn);
+                        xconn = -1;
+                        oconn = -1;
                     }
-
-                    // TODO: check for other read_message errors
 
                     switch (msg.type) {
                         case WHO:

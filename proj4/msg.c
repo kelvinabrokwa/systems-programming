@@ -76,7 +76,7 @@ int read_message(int sockfd, struct Message* msg)
         if ((nbytes = read(sockfd, &c, 1)) != 1) {
             if (nbytes == 0) {
 #ifdef DEBUG
-                fprintf(stderr, "MSG::DEBUG:: server disconnected\n");
+                fprintf(stderr, "MSG::DEBUG:: disconnected\n");
 #endif
                 return -1;
             } else {
@@ -113,7 +113,7 @@ int read_message(int sockfd, struct Message* msg)
                 msg->msg_int = (int)strtol(b, &endptr, 10);
                 if (errno != 0) {
                     perror("strtol");
-                    fprintf(stderr, "MSG:: Could not read move. Sent: %s", b);
+                    fprintf(stderr, "MSG::ERROR:: Could not read move. Sent: %s", b);
                     return -2;
                 }
                 if (msg->msg_int < 0 || msg->msg_int > 9) {
@@ -123,7 +123,8 @@ int read_message(int sockfd, struct Message* msg)
             } else if (strlen(b) == 9) {
                 strncpy(msg->msg_str, b, 9);
             } else {
-                fprintf(stderr, "MSG::READ::Invalid MOVE message length: %lu %s\n", strlen(b), b);
+                fprintf(stderr, "MSG::ERROR:: read_message:"
+                        "Invalid MOVE message length: %lu %s\n", strlen(b), b);
                 return -2;
             }
             break;

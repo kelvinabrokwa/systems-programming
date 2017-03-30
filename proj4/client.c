@@ -52,6 +52,28 @@ int get_server_info(char *server_ip, char *server_stream_port, char *server_dgra
     return 0;
 }
 
+/**
+ * request a move from the player and return it
+ */
+int get_move(char board[10])
+{
+    int move = -1;
+
+    printf("Enter move: ");
+    if (scanf("%d",&move) == 0)
+        return -1;
+
+    move--; // translate move into board index
+
+    if (move < 0 || move > 8)
+        return -1;
+
+    if (board[move] != ' ')
+        return -1;
+
+    return move;
+}
+
 int main(int argc, char** argv)
 {
     int sock;
@@ -130,6 +152,11 @@ int main(int argc, char** argv)
         exit(EXIT_FAILURE);
     }
 
+    if (errno == ECONNREFUSED) {
+        fprintf(stderr, "Too many clients queued. Quitting.\n");
+        exit(EXIT_FAILURE);
+    }
+
     if (query_mode) {
         struct MsgDgram msg;
         send(sock, &msg, sizeof(msg), 0);
@@ -157,10 +184,10 @@ int main(int argc, char** argv)
     int move;
 
 
+    struct timeval *tv = NULL;
     fd_set rfds;
     FD_ZERO(&rfds);
     FD_SET(sock, &rfds);
-    struct timeval *tv = NULL;
     if (timeout > -1) {
         struct timeval t;
         t.tv_sec = timeout;
@@ -177,7 +204,6 @@ int main(int argc, char** argv)
         return 0;
     }
 
-
     // read WHO req
     if (read_message(sock, &msg) == -1) {
         printf("Server disconnected\nQuitting client\n");
@@ -193,6 +219,24 @@ int main(int argc, char** argv)
     } else {
         fprintf(stderr, "CLIENT::ERROR:: Expected WHO message\n");
         exit(EXIT_FAILURE);
+    }
+
+    FD_ZERO(&rfds);
+    FD_SET(sock, &rfds);
+    if (timeout > -1) {
+        struct timeval t;
+        t.tv_sec = timeout;
+        t.tv_usec = 0;
+        tv = &t;
+    }
+    retval = select(FD_SETSIZE, &rfds, NULL, NULL, tv);
+
+    if (retval == -1) {
+        perror("CLIENT::ERROR:: select");
+        exit(EXIT_FAILURE);
+    } else if (retval == 0) {
+        printf("Timed out waiting for opponent\n");
+        return 0;
     }
 
     // read opponent handle
@@ -244,21 +288,8 @@ int main(int argc, char** argv)
             return 0;
         }
 
-        // prompt user for move
-        printf("MOVE: ");
-        scanf("%d", &move);
-
-        move--; // translate move into board index
-
-        if (move < 0 || move > 8) {
-            fprintf(stderr, "CLIENT:: Invalid move. "
-                            "Move must be an integer between 0 and 8 (inclusive)\n");
-            exit(EXIT_FAILURE);
-        }
-
-        if (board[move] != ' ') {
-            fprintf(stderr, "CLIENT:: Invalid move. "
-                            "This position is already occupied\n");
+        if ((move = get_move(board)) == -1) {
+            fprintf(stderr, "Invalid Move. Terminating Game\n");
             exit(EXIT_FAILURE);
         }
 
