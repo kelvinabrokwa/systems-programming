@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
     for (i = 2; i < argc; i++) {
         if (strcmp(argv[i], "-k") == 0 || strcmp(argv[i], "-K") == 0) {
             in_kb = 1;
-        } else if (strncmp(argv[i], "-d", 2) == 0) {
+        } else if (strcmp(argv[i], "-d") == 0) {
             if (argc <= i + 1) {
                 fprintf(stderr, "-d flag must be followed by a non-zero integer\n");
                 print_usage();
