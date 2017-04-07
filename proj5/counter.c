@@ -1,4 +1,4 @@
-/**
+/** counter.c
  *
  */
 
@@ -40,13 +40,16 @@ int insert_word(struct Word **list, char *w);
 void print_word_list(struct Word* word);
 
 struct Buffer buffer;
+char *filename;
 int numlines;
 int numcounters;
 int maxcounters;
+int filedelay;
 int threaddelay;
 char threadname;
 struct Word *even;
 struct Word *odd;
+pthread_t **counter_threads;
 pthread_mutex_t even_lock;
 pthread_mutex_t odd_lock;
 
@@ -119,10 +122,11 @@ void put(char *line)
     while((buffer.writepos + 1) % numlines == buffer.readpos) {
         if (numcounters < maxcounters) {
             // create new counter thread
-            pthread_t counter_thread;
+            pthread_t *counter_thread = (pthread_t*)malloc(sizeof(pthread_t));
             char *tname = (char*)malloc(1);
             *tname = threadname;
-            pthread_create(&counter_thread, NULL, consumer, (void*)tname);
+            pthread_create(counter_thread, NULL, consumer, (void*)tname);
+            counter_threads[numcounters] = counter_thread;
             threadname++;
             numcounters++;
         }
@@ -184,8 +188,7 @@ char* get()
  */
 void* producer()
 {
-    char filename[] = "/usr/share/fortune/linuxcookie";
-
+    struct timespec req;
     FILE *file = fopen(filename, "r");
     if (file == NULL ||  errno != 0) {
         perror("fopen");
@@ -195,13 +198,25 @@ void* producer()
     char line[MAX_LINE_LEN];
 
     while (fgets(line, sizeof(line), file)) {
+        if (filedelay) {
+            req.tv_sec = 0;
+            req.tv_nsec = msec2nsec(filedelay);
+            if (nanosleep(&req, NULL) != 0) {
+                perror("nanosleep");
+            }
+        }
         put(line);
     }
 
     fclose(file);
 
-    // TODO: remember to join on all created consumer threads
     print_word_list(even);
+    void *retval;
+    int i;
+    for (i = 0; i < numcounters; i++) {
+        pthread_join(*(counter_threads[i]), &retval);
+    }
+    // TODO: remember to join on all created consumer threads
 
     return NULL;
 }
@@ -249,8 +264,59 @@ long msec2nsec(int msec)
     return (long)msec * NSEC_IN_MSEC;
 }
 
-int main()
+int main(int argc, char** argv)
 {
+    numlines = 10; // TODO: remove this
+    threaddelay = 0;
+    maxcounters = 26;
+    char* endptr;
+    int i;
+    for (i = 1; i < argc; i++) {
+        if (strncmp(argv[i], "-b", 2) == 0) {
+            i++;
+            if (i == argc) {
+                fprintf(stderr, "-b flag needs an arg\n");
+            }
+            numlines = strtol(argv[i], &endptr, 10);
+            if (errno != 0 || *endptr != '\0' || numlines <= 0) {
+                fprintf(stderr, "-b flag needs a non-zero integer\n");
+            }
+        }
+        else if (strncmp(argv[i], "-t", 2) == 0) {
+            i++;
+            if (i == argc) {
+                fprintf(stderr, "-t flag needs an arg\n");
+            }
+            maxcounters = strtol(argv[i], &endptr, 10);
+            if (errno != 0 || *endptr != '\0' || maxcounters <= 0 || maxcounters > 26) {
+                fprintf(stderr, "0 < maxcounters <= 26\n");
+            }
+        }
+        else if (strncmp(argv[i], "-d", 2) == 0) {
+            i++;
+            if (i == argc) {
+                fprintf(stderr, "-d flag needs an arg\n");
+            }
+            filedelay = strtol(argv[i], &endptr, 10);
+            if (errno != 0 || *endptr != '\0' || filedelay < 0) {
+                fprintf(stderr, "0 < filedelay\n");
+            }
+        }
+        else if (strncmp(argv[i], "-D", 2) == 0) {
+            i++;
+            if (i == argc) {
+                fprintf(stderr, "-D flag needs an arg\n");
+            }
+            threaddelay = strtol(argv[i], &endptr, 10);
+            if (errno != 0 || *endptr != '\0' || threaddelay < 0) {
+                fprintf(stderr, "0 < threaddelay \n");
+            }
+        }
+        else {
+            filename = argv[i];
+        }
+    }
+
     pthread_t read_thread;
     void *retval;
     even = NULL;
@@ -258,8 +324,10 @@ int main()
     numlines = 5;
     numcounters = 0;
     maxcounters = 10;
-    threaddelay = 100;
+    threaddelay = 50;
     threadname = 'a';
+    counter_threads = (pthread_t**)calloc(maxcounters, sizeof(pthread_t*));
+    bzero(counter_threads, maxcounters);
     init(&buffer);
     pthread_create(&read_thread, NULL, producer, 0);
     pthread_join(read_thread, &retval);
