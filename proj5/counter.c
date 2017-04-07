@@ -15,7 +15,6 @@
 #define MAX_WORD_LEN MAX_LINE_LEN
 
 #define D() fprintf(stderr, ">>>>>\n")
-#define DC(cond) if (cond) { D(); }
 
 struct Buffer {
     char **buffer;
@@ -136,7 +135,12 @@ void put(char *line)
     }
 
     // write data
-    memcpy(buffer.buffer[buffer.writepos], line, strlen(line));
+    if (line != NULL) {
+        memcpy(buffer.buffer[buffer.writepos], line, strlen(line));
+    } else {
+        free(buffer.buffer[buffer.writepos]); // prevent a memory leak
+        buffer.buffer[buffer.writepos] = NULL;
+    }
 
     // update write pointer
     buffer.writepos++;
@@ -152,7 +156,7 @@ void put(char *line)
 }
 
 /**
- *
+ * if NULL is returned then game over man
  */
 char* get()
 {
@@ -167,7 +171,16 @@ char* get()
     }
 
     // grab the data
-    memcpy(line, buffer.buffer[buffer.readpos], strlen(buffer.buffer[buffer.readpos]));
+    if (buffer.buffer[buffer.readpos] != NULL) {
+        memcpy(line, buffer.buffer[buffer.readpos], strlen(buffer.buffer[buffer.readpos]));
+    } else {
+        // no more data
+        // wake the next consumer up and return
+        pthread_cond_signal(&buffer.notempty);
+        // release the lock
+        pthread_mutex_unlock(&buffer.lock);
+        return NULL;
+    }
 
     //update read pointer
     buffer.readpos++;
@@ -208,15 +221,17 @@ void* producer()
         put(line);
     }
 
+    put(NULL);
+
     fclose(file);
 
     print_word_list(even);
-    void *retval;
+
     int i;
     for (i = 0; i < numcounters; i++) {
-        pthread_join(*(counter_threads[i]), &retval);
+        if (counter_threads[i] != NULL)
+            pthread_join(*(counter_threads[i]), NULL);
     }
-    // TODO: remember to join on all created consumer threads
 
     return NULL;
 }
@@ -232,6 +247,8 @@ void* consumer(void *data)
     int wordlen;
     while (1) {
         line = get();
+        if (line == NULL)
+            break;
         req.tv_sec = 0;
         req.tv_nsec = msec2nsec(threaddelay);
         if (nanosleep(&req, NULL) != 0) {
@@ -318,7 +335,6 @@ int main(int argc, char** argv)
     }
 
     pthread_t read_thread;
-    void *retval;
     even = NULL;
     odd = NULL;
     numlines = 5;
@@ -330,7 +346,7 @@ int main(int argc, char** argv)
     bzero(counter_threads, maxcounters);
     init(&buffer);
     pthread_create(&read_thread, NULL, producer, 0);
-    pthread_join(read_thread, &retval);
+    pthread_join(read_thread, NULL);
     return 0;
 }
 
