@@ -1,5 +1,5 @@
-/** counter.c
- *
+/**
+ * counter.c
  */
 
 #include <stdio.h>
@@ -26,6 +26,7 @@ struct Buffer {
 
 struct Word {
     char* word;
+    int count;
     struct Word *next;
 };
 
@@ -39,7 +40,11 @@ int insert_word(struct Word **list, char *w);
 void print_word_list(struct Word* word);
 
 struct Buffer buffer;
-char *filename;
+
+char **file_names;
+char *end_cookie;
+char *read_cookie;
+int numfiles;
 int numlines;
 int numcounters;
 int maxcounters;
@@ -66,20 +71,39 @@ int insert_word(struct Word **list, char *w)
         return 1;
     }
     word->word = (char*)malloc(MAX_WORD_LEN);
+    word->count = 1;
     memcpy(word->word, w, strlen(w));
     word->next = NULL;
 
     // insert it into the list
-    if (*list == NULL || strcmp((*list)->word, word->word) < 0) {
+    if (*list == NULL) {
         // the list is empty
-        word->next = *list == NULL ? NULL : (*list)->next;
+        word->next = NULL;
         *list = word;
-    } else {
+    }
+    else if (strcmp((*list)->word, word->word) < 0) {
+        // goes in front of the list
+        word->next = *list;
+        *list = word;
+    }
+    else if (strcmp((*list)->word, word->word) == 0) {
+        // is the same as the front of the list
+        free(word);
+        (*list)->count++;
+    }
+    else {
         struct Word *curr = *list;
         while (curr->next != NULL && strcmp(curr->next->word, word->word) < 0)
             curr = curr->next;
-        word->next = curr->next;
-        curr->next = word;
+        if (curr->next == NULL || strcmp(curr->next->word, word->word) != 0) {
+            // place at appropriate spot
+            word->next = curr->next;
+            curr->next = word;
+        } else {
+            // already in list, increment counter
+            curr->next->count++;
+            free(word);
+        }
     }
 
     return 0;
@@ -88,7 +112,7 @@ int insert_word(struct Word **list, char *w)
 void print_word_list(struct Word* word)
 {
     while (word != NULL) {
-        printf("%s\n", word->word);
+        printf("%s\t%d\n", word->word, word->count);
         word = word->next;
     }
 }
@@ -135,11 +159,11 @@ void put(char *line)
     }
 
     // write data
-    if (line != NULL) {
+    if (line != end_cookie) {
         memcpy(buffer.buffer[buffer.writepos], line, strlen(line));
     } else {
         free(buffer.buffer[buffer.writepos]); // prevent a memory leak
-        buffer.buffer[buffer.writepos] = NULL;
+        buffer.buffer[buffer.writepos] = end_cookie;
     }
 
     // update write pointer
@@ -147,6 +171,36 @@ void put(char *line)
 
     if (buffer.writepos >= numlines)
         buffer.writepos = 0;
+
+    // signal the write
+    pthread_cond_signal(&buffer.notempty);
+
+    // release the lock
+    pthread_mutex_unlock(&buffer.lock);
+}
+
+/**
+ *
+ */
+void put_b1(char *line)
+{
+    // grab the lock
+    pthread_mutex_lock(&buffer.lock);
+
+    while (buffer.buffer[0] != read_cookie) {
+        // there is unread data in the buffer
+        pthread_cond_wait(&buffer.notfull, &buffer.lock);
+    }
+
+    // write data
+    if (line != end_cookie) {
+        buffer.buffer[0] = (char*)malloc(MAX_LINE_LEN);
+        memcpy(buffer.buffer[0], line, strlen(line));
+        //buffer.buffer[0] = line;
+    } else {
+        free(buffer.buffer[0]);
+        buffer.buffer[0] = end_cookie;
+    }
 
     // signal the write
     pthread_cond_signal(&buffer.notempty);
@@ -171,7 +225,7 @@ char* get()
     }
 
     // grab the data
-    if (buffer.buffer[buffer.readpos] != NULL) {
+    if (buffer.buffer[buffer.readpos] != end_cookie) {
         memcpy(line, buffer.buffer[buffer.readpos], strlen(buffer.buffer[buffer.readpos]));
     } else {
         // no more data
@@ -199,39 +253,105 @@ char* get()
 /**
  *
  */
+char* get_b1()
+{
+    char *line = (char*)malloc(MAX_LINE_LEN);
+
+    // acquire the lock
+    pthread_mutex_lock(&buffer.lock);
+
+    // wait for new data
+    while (buffer.buffer[0] == read_cookie) {
+        pthread_cond_wait(&buffer.notempty, &buffer.lock);
+    }
+
+    // grab the data
+    if (buffer.buffer[0] != end_cookie) {
+        memcpy(line, buffer.buffer[0], strlen(buffer.buffer[0]));
+    } else {
+        // no more data
+        // wake the next consumer up and return
+        pthread_cond_signal(&buffer.notempty);
+        // release the lock
+        pthread_mutex_unlock(&buffer.lock);
+        return NULL;
+    }
+
+    free(buffer.buffer[0]);
+    buffer.buffer[0] = read_cookie;
+
+    // signal the read
+    pthread_cond_signal(&buffer.notfull);
+
+    // release the lock
+    pthread_mutex_unlock(&buffer.lock);
+
+    return line;
+}
+
+/**
+ *
+ */
 void* producer()
 {
     struct timespec req;
-    FILE *file = fopen(filename, "r");
-    if (file == NULL ||  errno != 0) {
-        perror("fopen");
-        exit(EXIT_FAILURE);
+    FILE *file;
+    int i;
+
+    // TODO: lock?
+    // this is so that the producer starts out being able to write
+    if (numlines == 1) {
+        buffer.buffer[0] = read_cookie;
     }
 
-    char line[MAX_LINE_LEN];
+    // create the first consumer
+    pthread_t *counter_thread = (pthread_t*)malloc(sizeof(pthread_t));
+    char *tname = (char*)malloc(1);
+    *tname = threadname;
+    pthread_create(counter_thread, NULL, consumer, (void*)tname);
+    counter_threads[numcounters] = counter_thread;
+    threadname++;
+    numcounters++;
 
-    while (fgets(line, sizeof(line), file)) {
-        if (filedelay) {
-            req.tv_sec = 0;
-            req.tv_nsec = msec2nsec(filedelay);
-            if (nanosleep(&req, NULL) != 0) {
-                perror("nanosleep");
-            }
+    for (i = 0; i < numfiles; i++) {
+        file = fopen(file_names[i], "r");
+        if (file == NULL ||  errno != 0) {
+            perror("fopen");
+            exit(EXIT_FAILURE);
         }
-        put(line);
+
+        char line[MAX_LINE_LEN];
+
+        while (fgets(line, sizeof(line), file)) {
+            if (filedelay) {
+                req.tv_sec = filedelay / 1000;
+                req.tv_nsec = msec2nsec(filedelay - (filedelay / 1000));
+                if (nanosleep(&req, NULL) != 0) {
+                    fprintf(stderr, "%ld %ld\n", req.tv_sec, req.tv_nsec);
+                    perror("nanosleep");
+                }
+            }
+            if (numlines > 1)
+                put(line);
+            else
+                put_b1(line);
+        }
     }
 
-    put(NULL);
+    if (numlines > 1)
+        put(end_cookie);
+    else
+        put_b1(end_cookie);
 
     fclose(file);
 
-    print_word_list(even);
-
-    int i;
     for (i = 0; i < numcounters; i++) {
         if (counter_threads[i] != NULL)
             pthread_join(*(counter_threads[i]), NULL);
     }
+
+    print_word_list(even);
+    print_word_list(odd);
 
     return NULL;
 }
@@ -241,29 +361,38 @@ void* producer()
  */
 void* consumer(void *data)
 {
-    //char name = *((char*)data);
+    char name = *((char*)data);
     char *line, *word;
     struct timespec req;
     int wordlen;
     while (1) {
-        line = get();
+        if (numlines > 1)
+            line = get();
+        else
+            line = get_b1();
+
         if (line == NULL)
             break;
-        req.tv_sec = 0;
-        req.tv_nsec = msec2nsec(threaddelay);
+
+        req.tv_sec = threaddelay / 1000;
+        req.tv_nsec = msec2nsec(threaddelay - (threaddelay / 1000));
         if (nanosleep(&req, NULL) != 0) {
+            fprintf(stderr, "%ld %ld\n", req.tv_sec, req.tv_nsec);
             perror("nanosleep");
         }
+
         word = strtok(line, " ");
         while (word != NULL) {
             wordlen = strlen(word);
             if (wordlen % 2) {
                 pthread_mutex_lock(&odd_lock);
                 insert_word(&odd, word);
+                printf("%c", name);
                 pthread_mutex_unlock(&odd_lock);
             } else {
                 pthread_mutex_lock(&even_lock);
                 insert_word(&even, word);
+                printf("%c", name);
                 pthread_mutex_unlock(&even_lock);
             }
 
@@ -283,9 +412,17 @@ long msec2nsec(int msec)
 
 int main(int argc, char** argv)
 {
-    numlines = 10; // TODO: remove this
-    threaddelay = 0;
-    maxcounters = 26;
+    if (argc < 10) {
+        fprintf(stderr, "yo args aint enough\n");
+        exit(EXIT_FAILURE);
+    }
+
+    numfiles = 0;
+    file_names = (char**)calloc(argc - 9, sizeof(char*));
+    numlines = -1;
+    threaddelay = -1;
+    filedelay = -1;
+    maxcounters = -1;
     char* endptr;
     int i;
     for (i = 1; i < argc; i++) {
@@ -330,23 +467,41 @@ int main(int argc, char** argv)
             }
         }
         else {
-            filename = argv[i];
+            file_names[numfiles] = argv[i];
+            numfiles++;
         }
     }
 
+    if (numfiles == 0) {
+        fprintf(stderr, "You must pass file names\n");
+        exit(EXIT_FAILURE);
+    }
+    if (numlines == -1) {
+        fprintf(stderr, "You must pass a numlines flag\n");
+        exit(EXIT_FAILURE);
+    }
+    if (filedelay == -1) {
+        fprintf(stderr, "You must pass a filedelay flag\n");
+        exit(EXIT_FAILURE);
+    }
+    if (threaddelay == -1) {
+        fprintf(stderr, "You must pass a threaddelay flag\n");
+        exit(EXIT_FAILURE);
+    }
+
+    end_cookie = (char*)malloc(1);
+    read_cookie = (char*)malloc(1);
     pthread_t read_thread;
     even = NULL;
     odd = NULL;
-    numlines = 5;
     numcounters = 0;
-    maxcounters = 10;
-    threaddelay = 50;
     threadname = 'a';
     counter_threads = (pthread_t**)calloc(maxcounters, sizeof(pthread_t*));
     bzero(counter_threads, maxcounters);
     init(&buffer);
     pthread_create(&read_thread, NULL, producer, 0);
     pthread_join(read_thread, NULL);
+
     return 0;
 }
 
