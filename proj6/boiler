@@ -1,0 +1,41 @@
+#!/bin/sh
+
+NUM=""
+MIN=""
+MAX=""
+STEP=""
+PLOTFILE=""
+STATEFILE=""
+
+# parse command line args
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -n)
+            shift; NUM=$1
+            ;;
+        -i)
+            shift; MIN=$1
+            shift; MAX=$1
+            shift; STEP=$1
+            ;;
+        -p)
+            shift; PLOTFILE=$1
+            ;;
+        -r)
+            shift; STATEFILE=$1
+            ;;
+        *)
+            echo "unknown argument: $1"
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+echo num = $NUM
+echo min = $MIN
+echo max = $MAX
+echo step = $STEP
+echo plotfile = $PLOTFILE
+
+
