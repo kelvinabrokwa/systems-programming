@@ -1,28 +1,47 @@
 #!/bin/sh
 
-NUM=""
-MIN=""
-MAX=""
-STEP=""
-PLOTFILE=""
-STATEFILE=""
+num=""
+min=""
+max=""
+step=""
+plotfile=""
+statefile="beetle.state"
+
+on_sigint() {
+    rm $statefile
+    exit
+}
+
+on_sigusr1() {
+    echo "current size: $size"
+}
+
+on_sigusr2() {
+    echo "#size=$size" >> $statefile
+    exit
+}
+
+
+trap "on_sigint" SIGINT
+trap "on_sigusr1" SIGUSR1
+trap "on_sigusr2" SIGUSR2
 
 # parse command line args
 while [[ $# -gt 0 ]]; do
     case $1 in
         -n)
-            shift; NUM=$1
+            shift; num=$1
             ;;
         -i)
-            shift; MIN=$1
-            shift; MAX=$1
-            shift; STEP=$1
+            shift; min=$1
+            shift; max=$1
+            shift; step=$1
             ;;
         -p)
-            shift; PLOTFILE=$1
+            shift; plotfile=$1
             ;;
         -r)
-            shift; STATEFILE=$1
+            shift; statefile=$1
             ;;
         *)
             echo "unknown argument: $1"
@@ -32,10 +51,18 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-echo num = $NUM
-echo min = $MIN
-echo max = $MAX
-echo step = $STEP
-echo plotfile = $PLOTFILE
+size=$min
+
+while [[ $size -le $max ]]; do
+    ./beetle $size $num | awk -F' ' '{ print $1, $11 }' >> $statefile
+    size=`expr $size + $step`
+done
 
 
+# create plot
+# gnuplot -p -e 'plot "$statefile"; set output "$plotfile"'
+
+# don't output lines with metadata (starting with #)
+cat $statefile | grep -v '^\#'
+
+rm $statefile
