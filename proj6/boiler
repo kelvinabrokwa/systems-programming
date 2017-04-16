@@ -2,8 +2,10 @@
 
 #
 # Author: Kelvin Abrokwa-Johnson
-# Runs beetle and bunch
+# Runs beetle and stuff
 #
+
+echo $$
 
 
 num=""
@@ -13,6 +15,7 @@ step=""
 plotfile=""
 statefile=""
 cookie="#cookiecookiecookie"
+
 
 #
 # utility functions
@@ -33,10 +36,12 @@ on_sigint() {
 }
 
 on_sigusr1() {
+    # output current size
     echo "current size: $size"
 }
 
 on_sigusr2() {
+    # save state and exit
     echo "#num=$num"           >> $statefile
     echo "#min=$size"          >> $statefile
     echo "#max=$max"           >> $statefile
@@ -79,18 +84,36 @@ done
 
 
 #
-# parse recover flag
+# parse recovery flag
 #
 if [[ -n "$statefile" ]]; then
-    # restoring
     # verify cookie in the first line
-    line=`head -n 1 $statefile` # check the first line
+    line=`head -n 1 $statefile`
     if [[ $line != $cookie ]]; then
         echo "Incorrectly formatted restoration file. Exiting."
         exit
     fi
+
+    # parse arguments
     for line in `grep '^#' $statefile`; do
-        echo $line
+        val=`echo $line | cut -d '=' -f2`
+        case $line in
+            *num*)
+                num=$val
+                ;;
+            *min*)
+                min=$val
+                ;;
+            *max*)
+                max=$val
+                ;;
+            *step*)
+                step=$val
+                ;;
+            *plotfile*)
+                plotfile=`echo $line | cut -d '=' -f2`
+                ;;
+        esac
     done
 fi
 
@@ -138,8 +161,15 @@ if [[ -n $plotfile  ]]; then
     gnuplot -p -e 'set term png; set output "'$plotfile'"; set xlabel "Square size"; set ylabel "Mean beetle lifetime"; plot "'$statefile'"'
 fi
 
+#
+# output
 # don't output lines with metadata (starting with #)
+#
 cat $statefile | grep -v '^#'
 
-#cleanup
+
+#
+# clean up
+#
+cleanup
 
