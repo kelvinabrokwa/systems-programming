@@ -1,14 +1,34 @@
 #!/bin/sh
 
+#
+# Author: Kelvin Abrokwa-Johnson
+# Runs beetle and bunch
+#
+
+
 num=""
 min=""
 max=""
 step=""
 plotfile=""
-statefile="beetle.state"
+statefile=""
+cookie="#cookiecookiecookie"
 
+#
+# utility functions
+#
+cleanup() {
+    rm -f $statefile
+    echo
+}
+
+
+#
+# handle signals
+#
 on_sigint() {
-    rm $statefile
+    # clean up and exit
+    cleanup
     exit
 }
 
@@ -17,16 +37,22 @@ on_sigusr1() {
 }
 
 on_sigusr2() {
-    echo "#size=$size" >> $statefile
+    echo "#num=$num"           >> $statefile
+    echo "#min=$size"          >> $statefile
+    echo "#max=$max"           >> $statefile
+    echo "#step=$step"         >> $statefile
+    echo "#plotfile=$plotfile" >> $statefile
     exit
 }
-
 
 trap "on_sigint" SIGINT
 trap "on_sigusr1" SIGUSR1
 trap "on_sigusr2" SIGUSR2
 
+
+#
 # parse command line args
+#
 while [[ $# -gt 0 ]]; do
     case $1 in
         -n)
@@ -51,6 +77,52 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
+
+#
+# parse recover flag
+#
+if [[ -n "$statefile" ]]; then
+    # restoring
+    # verify cookie in the first line
+    line=`head -n 1 $statefile` # check the first line
+    if [[ $line != $cookie ]]; then
+        echo "Incorrectly formatted restoration file. Exiting."
+        exit
+    fi
+    for line in `grep '^#' $statefile`; do
+        echo $line
+    done
+fi
+
+
+#
+# validate arguments
+#
+if [[ -z "$num" ]]; then
+    echo "invalid num argument"
+    exit 1
+fi
+if [[ -z "$min" ]]; then
+    echo "invalid min argument"
+    exit 1
+fi
+if [[ -z "$max" ]]; then
+    echo "invalid max argument"
+    exit 1
+fi
+if [[ -z "$step" ]]; then
+    echo "invalid step argument"
+    exit 1
+fi
+if [[ -z "$statefile" ]]; then
+    statefile="beetle.state"
+    echo $cookie >> $statefile
+fi
+
+
+#
+# run beetle
+#
 size=$min
 
 while [[ $size -le $max ]]; do
@@ -59,10 +131,15 @@ while [[ $size -le $max ]]; do
 done
 
 
+#
 # create plot
-# gnuplot -p -e 'plot "$statefile"; set output "$plotfile"'
+#
+if [[ -n $plotfile  ]]; then
+    gnuplot -p -e 'set term png; set output "'$plotfile'"; set xlabel "Square size"; set ylabel "Mean beetle lifetime"; plot "'$statefile'"'
+fi
 
 # don't output lines with metadata (starting with #)
-cat $statefile | grep -v '^\#'
+cat $statefile | grep -v '^#'
 
-rm $statefile
+#cleanup
+
