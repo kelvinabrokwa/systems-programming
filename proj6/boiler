@@ -5,13 +5,11 @@
 # Runs beetle and stuff
 #
 
-echo $$
-
-
 num=""
 min=""
 max=""
 step=""
+tmpfile="beetle.tmp"
 plotfile=""
 statefile=""
 cookie="#cookiecookiecookie"
@@ -21,7 +19,7 @@ cookie="#cookiecookiecookie"
 # utility functions
 #
 cleanup() {
-    rm -f $statefile
+    rm -f $tmpfile
     echo
 }
 
@@ -42,11 +40,14 @@ on_sigusr1() {
 
 on_sigusr2() {
     # save state and exit
-    echo "#num=$num"           >> $statefile
-    echo "#min=$size"          >> $statefile
-    echo "#max=$max"           >> $statefile
-    echo "#step=$step"         >> $statefile
-    echo "#plotfile=$plotfile" >> $statefile
+    echo $cookie                > beetle.state
+    echo "#num=$num"           >> beetle.state
+    echo "#min=$size"          >> beetle.state
+    echo "#max=$max"           >> beetle.state
+    echo "#step=$step"         >> beetle.state
+    echo "#plotfile=$plotfile" >> beetle.state
+    cat $tmpfile               >> beetle.state
+    cleanup
     exit
 }
 
@@ -94,6 +95,9 @@ if [[ -n "$statefile" ]]; then
         exit
     fi
 
+    # copy data into tmp file
+    grep -v '^#' $statefile > $tmpfile
+
     # parse arguments
     for line in `grep '^#' $statefile`; do
         val=`echo $line | cut -d '=' -f2`
@@ -111,7 +115,7 @@ if [[ -n "$statefile" ]]; then
                 step=$val
                 ;;
             *plotfile*)
-                plotfile=`echo $line | cut -d '=' -f2`
+                plotfile=$val
                 ;;
         esac
     done
@@ -121,25 +125,23 @@ fi
 #
 # validate arguments
 #
-if [[ -z "$num" ]]; then
+numre="^[0-9]+$"
+
+if [[ -z "$num" ]] || ! [[ $num =~ $numre ]]; then
     echo "invalid num argument"
     exit 1
 fi
-if [[ -z "$min" ]]; then
+if [[ -z "$min" ]] || ! [[ $min =~ $numre ]]; then
     echo "invalid min argument"
     exit 1
 fi
-if [[ -z "$max" ]]; then
+if [[ -z "$max" ]] || ! [[ $max =~ $numre ]]; then
     echo "invalid max argument"
     exit 1
 fi
-if [[ -z "$step" ]]; then
+if [[ -z "$step" ]] || ! [[ $step =~ $numre ]]; then
     echo "invalid step argument"
     exit 1
-fi
-if [[ -z "$statefile" ]]; then
-    statefile="beetle.state"
-    echo $cookie >> $statefile
 fi
 
 
@@ -148,8 +150,14 @@ fi
 #
 size=$min
 
+# run at least once
+./beetle $size $num | awk -F' ' '{ print $1, $11 }' >> $tmpfile &
+wait $!
+size=`expr $size + $step`
+
 while [[ $size -le $max ]]; do
-    ./beetle $size $num | awk -F' ' '{ print $1, $11 }' >> $statefile
+    ./beetle $size $num | awk -F' ' '{ print $1, $11 }' >> $tmpfile &
+    wait $!
     size=`expr $size + $step`
 done
 
@@ -158,14 +166,15 @@ done
 # create plot
 #
 if [[ -n $plotfile  ]]; then
-    gnuplot -p -e 'set term png; set output "'$plotfile'"; set xlabel "Square size"; set ylabel "Mean beetle lifetime"; plot "'$statefile'"'
+    gnuplot -p -e 'set term png; set output "'$plotfile'"; set xlabel "Square Size (inches)"; set ylabel "Mean Beetle Lifetime (seconds)"; plot "'$tmpfile'" notitle'
 fi
+
 
 #
 # output
 # don't output lines with metadata (starting with #)
 #
-cat $statefile | grep -v '^#'
+cat $tmpfile | grep -v '^#'
 
 
 #
