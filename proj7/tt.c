@@ -10,7 +10,10 @@
 
 #include "common.h"
 
+#define DB fprintf(stderr, "-->\n")
+
 void dump_board();
+void set_status(int pipefd, char *status);
 
 int main(int argc, char **argv)
 
@@ -92,7 +95,6 @@ int main(int argc, char **argv)
   strncpy(outmsg.data, handle, 31); outmsg.data[31] = '\0';
   putmsg(sock, &outmsg);
 
-
   // ~ when you wish, on a star ~
   int ttt2wish[2], wish2ttt[2];
   if (pipe(ttt2wish) < 0) {
@@ -129,11 +131,10 @@ int main(int argc, char **argv)
   FILE *wish2ttt_stream = fdopen(wish2ttt[0], "r");
 
   // build the UI
-  char *source_cmd = "source ../ttt.tcl\n";
+  char *source_cmd = "source ttt.tcl\n";
   write(ttt2wish[1], source_cmd, strlen(source_cmd));
 
-  char *awaiting_match_cmd = "setStatus \"Awaiting Match\"\n";
-  write(ttt2wish[1], awaiting_match_cmd, strlen(awaiting_match_cmd));
+  set_status(ttt2wish[1], "Awaiting Match");
 
   /* Await MATCH */
 
@@ -167,9 +168,6 @@ int main(int argc, char **argv)
   }
   write(ttt2wish[1], cmd, strlen(cmd));
 
-
-  char *your_move_cmd = "setStatus \"Your Move\"\n";
-
   /* In the match */
 
   for(i=0; i<9; i++) board[i]=' ';
@@ -177,6 +175,7 @@ int main(int argc, char **argv)
   while(!finished){
 
     /* Await WHATMOVE/RESULT from server */
+    set_status(ttt2wish[1], "Awaiting Opponent Move");
 
     bzero((char *)&inmsg, sizeof(inmsg));
     getmsg(sock, &inmsg);
@@ -184,11 +183,11 @@ int main(int argc, char **argv)
 
     case WHATMOVE:
       for(i=0; i<9; i++) board[i]=inmsg.board[i];
-      dump_board(stdout,board);
+      dump_board(stdout, board);
       do {
         valid = 0;
-        printf("Enter your move: ");
-        write(ttt2wish[1], your_move_cmd, strlen(your_move_cmd));
+        fprintf(stderr, "Enter your move: ");
+        set_status(ttt2wish[1], "Your Move");
         //num = scanf("%d", &move);
         num = fscanf(wish2ttt_stream, "%d", &move);
         if (num == EOF) {
@@ -210,7 +209,10 @@ int main(int argc, char **argv)
 
       bzero((char *)&outmsg, sizeof(outmsg));
       outmsg.type = MOVE;
+      DB;
+      fprintf(stderr, "%d\n", move);
       sprintf(&outmsg.res, "%c", move-1);
+      DB;
       putmsg(sock, &outmsg);
       break;
 
@@ -220,15 +222,15 @@ int main(int argc, char **argv)
       switch (inmsg.res) {
       case 'W':
         printf("You win\n");
-
+        set_status(ttt2wish[1], "You Win");
         break;
       case 'L':
         printf("You lose\n");
+        set_status(ttt2wish[1], "You Lose");
         break;
       case 'D':
         printf("Draw\n");
-        sprintf(cmd, "setStatus \"Draw\"\n");
-        write(ttt2wish[1], cmd, strlen(cmd));
+        set_status(ttt2wish[1], "Draw");
         break;
       default:
         fprintf(stderr,"Invalid result code\n");
@@ -244,14 +246,24 @@ int main(int argc, char **argv)
   return(0);
 }
 
+void set_status(int pipefd, char *status)
+{
+    char cmd[1024];
+    sprintf(cmd, "setStatus \"%s\"\n", status);
+    write(pipefd, cmd, strlen(cmd));
+}
+
 
 void
 dump_board(FILE *s, char *board)
 {
+  fprintf(s, "updateBoard \"%s\"\n", board);
+  /*
   fprintf(s,"%c | %c | %c\n", board[0], board[1], board[2]);
   fprintf(s,"----------\n");
   fprintf(s,"%c | %c | %c\n", board[3], board[4], board[5]);
   fprintf(s,"----------\n");
   fprintf(s,"%c | %c | %c\n", board[6], board[7], board[8]);
+  */
 }
 

@@ -83,6 +83,10 @@ proc updateBoard {board} {
     }
 }
 
+# status canvas
+canvas .cs -width 300 -height 100 -bg gray
+pack .cs
+
 proc setHandle {name symbol} {
     .cs create text 10 30 -anchor nw -text "You: $name ($symbol)"
 }
@@ -91,14 +95,12 @@ proc setOpponentHandle {name symbol} {
     .cs create text 10 50 -anchor nw -text "Opponent: $name ($symbol)"
 }
 
-proc setStatus {status} {
-    global width
-    .cs create text $width 30 -anchor ne -text $status -tags status
-}
+.cs create text $width 30 -anchor ne -text "" -tags status
 
-# status canvas
-canvas .cs -width 300 -height 100 -bg gray
-pack .cs
+proc setStatus {status} {
+    #global width
+    .cs itemconfigure status -text $status
+}
 
 # sound button
 button .soundBtn -text "Sound"
